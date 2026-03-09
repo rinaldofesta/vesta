@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["Edit", "MultiEdit", "Bash(npm run test *)", "Bash(npx *)"],
+    "deny": ["Bash(rm -rf *)"]
+  }
+}

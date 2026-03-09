@@ -1,0 +1,100 @@
+{"id":"IT-001","input":"svegliami alle 7 e mezza","expected_tool":"set_alarm","expected_params":{"time":"07:30"},"lang":"it","difficulty":"easy"}
+{"id":"IT-002","input":"metti la sveglia per le 6:45","expected_tool":"set_alarm","expected_params":{"time":"06:45"},"lang":"it","difficulty":"easy"}
+{"id":"IT-003","input":"sveglia domani alle 5 del mattino","expected_tool":"set_alarm","expected_params":{"time":"05:00"},"lang":"it","difficulty":"easy"}
+{"id":"IT-004","input":"svejami alle 8","expected_tool":"set_alarm","expected_params":{"time":"08:00"},"lang":"it","difficulty":"medium"}
+{"id":"IT-005","input":"metti su la sveglia per le 9 e un quarto","expected_tool":"set_alarm","expected_params":{"time":"09:15"},"lang":"it","difficulty":"medium"}
+{"id":"IT-006","input":"domani devo alzarmi alle 6, metti la sveglia","expected_tool":"set_alarm","expected_params":{"time":"06:00"},"lang":"it","difficulty":"medium"}
+{"id":"IT-007","input":"sveglia alle 7 meno un quarto","expected_tool":"set_alarm","expected_params":{"time":"06:45"},"lang":"it","difficulty":"medium"}
+{"id":"IT-008","input":"devo svegliarmi presto domattina","expected_tool":"set_alarm","expected_params":{},"lang":"it","difficulty":"ambiguous"}
+{"id":"IT-009","input":"imposta sveglia alle 10 e mezza di sera","expected_tool":"set_alarm","expected_params":{"time":"22:30"},"lang":"it","difficulty":"medium"}
+{"id":"IT-010","input":"suoneria alle 14:30 per la riunione","expected_tool":"set_alarm","expected_params":{"time":"14:30","label":"riunione"},"lang":"it","difficulty":"medium"}
+{"id":"IT-011","input":"mettimi una sveglia alle tre del pomeriggio","expected_tool":"set_alarm","expected_params":{"time":"15:00"},"lang":"it","difficulty":"medium"}
+{"id":"IT-012","input":"sveglia presto","expected_tool":"set_alarm","expected_params":{},"lang":"it","difficulty":"ambiguous"}
+{"id":"IT-013","input":"fissa appuntamento dal dentista giovedì prossimo alle 15","expected_tool":"create_event","expected_params":{"title":"Dentista"},"lang":"it","difficulty":"medium"}
+{"id":"IT-014","input":"crea evento riunione con Marco lunedì alle 10 in ufficio","expected_tool":"create_event","expected_params":{"title":"Riunione con Marco","location":"ufficio"},"lang":"it","difficulty":"medium"}
+{"id":"IT-015","input":"metti in calendario la cena di compleanno sabato alle 20","expected_tool":"create_event","expected_params":{"title":"Cena di compleanno"},"lang":"it","difficulty":"medium"}
+{"id":"IT-016","input":"ho un appuntamento con l'avvocato domani alle 11","expected_tool":"create_event","expected_params":{"title":"Avvocato"},"lang":"it","difficulty":"medium"}
+{"id":"IT-017","input":"segna sul calendario visita medica il 15 marzo alle 9:30","expected_tool":"create_event","expected_params":{"title":"Visita medica","start":"2026-03-15T09:30:00"},"lang":"it","difficulty":"easy"}
+{"id":"IT-018","input":"fissa una call con il team domani alle 14","expected_tool":"create_event","expected_params":{"title":"Call con il team"},"lang":"it","difficulty":"medium"}
+{"id":"IT-019","input":"aggiungi al calendario la partita di calcetto mercoledì alle 19 al campo sportivo","expected_tool":"create_event","expected_params":{"title":"Partita di calcetto","location":"campo sportivo"},"lang":"it","difficulty":"medium"}
+{"id":"IT-020","input":"metti in agenda pranzo con Anna venerdì a mezzogiorno al ristorante Da Luigi","expected_tool":"create_event","expected_params":{"title":"Pranzo con Anna","location":"ristorante Da Luigi"},"lang":"it","difficulty":"medium"}
+{"id":"IT-021","input":"fissa qualcosa per la prossima settimana","expected_tool":"create_event","expected_params":{},"lang":"it","difficulty":"ambiguous"}
+{"id":"IT-022","input":"devo andare dal meccanico, segnalo","expected_tool":"create_event","expected_params":{"title":"Meccanico"},"lang":"it","difficulty":"ambiguous"}
+{"id":"IT-023","input":"appuntamento oculista il 20 marzo alle 16:30","expected_tool":"create_event","expected_params":{"title":"Oculista","start":"2026-03-20T16:30:00"},"lang":"it","difficulty":"easy"}
+{"id":"IT-024","input":"ricordami di comprare il latte stasera","expected_tool":"set_reminder","expected_params":{"text":"comprare il latte"},"lang":"it","difficulty":"medium"}
+{"id":"IT-025","input":"ricordami di chiamare il dottore domani mattina alle 9","expected_tool":"set_reminder","expected_params":{"text":"chiamare il dottore"},"lang":"it","difficulty":"easy"}
+{"id":"IT-026","input":"promemoria: pagare la bolletta entro il 15 marzo","expected_tool":"set_reminder","expected_params":{"text":"pagare la bolletta"},"lang":"it","difficulty":"easy"}
+{"id":"IT-027","input":"ricordami di prendere la medicina alle 20","expected_tool":"set_reminder","expected_params":{"text":"prendere la medicina","datetime":"2026-03-08T20:00:00"},"lang":"it","difficulty":"easy"}
+{"id":"IT-028","input":"non farmi dimenticare di comprare i fiori per domani","expected_tool":"set_reminder","expected_params":{"text":"comprare i fiori"},"lang":"it","difficulty":"medium"}
+{"id":"IT-029","input":"devo ricordarmi di mandare l'email a Giovanni stasera alle 21","expected_tool":"set_reminder","expected_params":{"text":"mandare l'email a Giovanni"},"lang":"it","difficulty":"medium"}
+{"id":"IT-030","input":"reminder alle 18: passare in lavanderia","expected_tool":"set_reminder","expected_params":{"text":"passare in lavanderia"},"lang":"it","difficulty":"medium"}
+{"id":"IT-031","input":"ricordami qualcosa di importante tra un po'","expected_tool":"set_reminder","expected_params":{},"lang":"it","difficulty":"ambiguous"}
+{"id":"IT-032","input":"mettimi un promemoria per ritirare il pacco domani pomeriggio alle 15","expected_tool":"set_reminder","expected_params":{"text":"ritirare il pacco"},"lang":"it","difficulty":"easy"}
+{"id":"IT-033","input":"non dimenticarti di ricordarmi di portare fuori il cane alle 7 di sera","expected_tool":"set_reminder","expected_params":{"text":"portare fuori il cane","datetime":"2026-03-08T19:00:00"},"lang":"it","difficulty":"medium"}
+{"id":"IT-034","input":"ricordami di comprare il regalo per Sara entro venerdì","expected_tool":"set_reminder","expected_params":{"text":"comprare il regalo per Sara"},"lang":"it","difficulty":"medium"}
+{"id":"IT-035","input":"ricorda: riunione condominiale il 12 marzo alle 18","expected_tool":"set_reminder","expected_params":{"text":"riunione condominiale"},"lang":"it","difficulty":"easy"}
+{"id":"IT-036","input":"qual è la ricetta della carbonara?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-037","input":"chi era Napoleone?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-038","input":"spiegami la teoria della relatività in parole semplici","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-039","input":"come funziona il motore a combustione interna?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-040","input":"raccontami una barzelletta","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-041","input":"qual è la capitale dell'Australia?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-042","input":"traducimi 'buongiorno' in giapponese","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-043","input":"come si fa il tiramisù?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-044","input":"che differenza c'è tra HTTP e HTTPS?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-045","input":"scrivimi una poesia sul tramonto","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-046","input":"dimmi 3 curiosità sulla Luna","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-047","input":"cos'è il machine learning?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-048","input":"perché il cielo è azzurro?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-049","input":"consigliami un libro da leggere","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"IT-050","input":"ciao, come stai?","expected_tool":"general_chat","expected_params":{},"lang":"it","difficulty":"easy"}
+{"id":"EN-001","input":"wake me up at 6:45 AM","expected_tool":"set_alarm","expected_params":{"time":"06:45"},"lang":"en","difficulty":"easy"}
+{"id":"EN-002","input":"set an alarm for 7:30","expected_tool":"set_alarm","expected_params":{"time":"07:30"},"lang":"en","difficulty":"easy"}
+{"id":"EN-003","input":"alarm at 5 AM tomorrow","expected_tool":"set_alarm","expected_params":{"time":"05:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-004","input":"wake me at a quarter past 8","expected_tool":"set_alarm","expected_params":{"time":"08:15"},"lang":"en","difficulty":"medium"}
+{"id":"EN-005","input":"set alarm for half past six in the morning","expected_tool":"set_alarm","expected_params":{"time":"06:30"},"lang":"en","difficulty":"medium"}
+{"id":"EN-006","input":"I need to get up at 9 PM for my night shift","expected_tool":"set_alarm","expected_params":{"time":"21:00"},"lang":"en","difficulty":"medium"}
+{"id":"EN-007","input":"alarm for quarter to seven","expected_tool":"set_alarm","expected_params":{"time":"06:45"},"lang":"en","difficulty":"medium"}
+{"id":"EN-008","input":"I need to wake up early tomorrow","expected_tool":"set_alarm","expected_params":{},"lang":"en","difficulty":"ambiguous"}
+{"id":"EN-009","input":"set my alarm for ten thirty tonight","expected_tool":"set_alarm","expected_params":{"time":"22:30"},"lang":"en","difficulty":"medium"}
+{"id":"EN-010","input":"buzz me at 2:30 PM for the meeting","expected_tool":"set_alarm","expected_params":{"time":"14:30","label":"meeting"},"lang":"en","difficulty":"medium"}
+{"id":"EN-011","input":"can you set an alarm for noon","expected_tool":"set_alarm","expected_params":{"time":"12:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-012","input":"alarm early","expected_tool":"set_alarm","expected_params":{},"lang":"en","difficulty":"ambiguous"}
+{"id":"EN-013","input":"schedule meeting with Marco Monday at 10am","expected_tool":"create_event","expected_params":{"title":"Meeting with Marco"},"lang":"en","difficulty":"medium"}
+{"id":"EN-014","input":"add dentist appointment next Thursday at 3pm","expected_tool":"create_event","expected_params":{"title":"Dentist appointment"},"lang":"en","difficulty":"medium"}
+{"id":"EN-015","input":"put birthday dinner on Saturday at 8pm","expected_tool":"create_event","expected_params":{"title":"Birthday dinner"},"lang":"en","difficulty":"medium"}
+{"id":"EN-016","input":"I have a meeting with the lawyer tomorrow at 11","expected_tool":"create_event","expected_params":{"title":"Meeting with the lawyer"},"lang":"en","difficulty":"medium"}
+{"id":"EN-017","input":"create event doctor visit March 15 at 9:30am","expected_tool":"create_event","expected_params":{"title":"Doctor visit","start":"2026-03-15T09:30:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-018","input":"set up a team call tomorrow at 2pm","expected_tool":"create_event","expected_params":{"title":"Team call"},"lang":"en","difficulty":"medium"}
+{"id":"EN-019","input":"add soccer game Wednesday at 7pm at the sports center","expected_tool":"create_event","expected_params":{"title":"Soccer game","location":"sports center"},"lang":"en","difficulty":"medium"}
+{"id":"EN-020","input":"book lunch with Anna Friday at noon at Luigi's Restaurant","expected_tool":"create_event","expected_params":{"title":"Lunch with Anna","location":"Luigi's Restaurant"},"lang":"en","difficulty":"medium"}
+{"id":"EN-021","input":"schedule something for next week","expected_tool":"create_event","expected_params":{},"lang":"en","difficulty":"ambiguous"}
+{"id":"EN-022","input":"I need to go to the mechanic, note it down","expected_tool":"create_event","expected_params":{"title":"Mechanic"},"lang":"en","difficulty":"ambiguous"}
+{"id":"EN-023","input":"eye doctor appointment March 20 at 4:30pm","expected_tool":"create_event","expected_params":{"title":"Eye doctor","start":"2026-03-20T16:30:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-024","input":"remind me to buy milk tonight","expected_tool":"set_reminder","expected_params":{"text":"buy milk"},"lang":"en","difficulty":"medium"}
+{"id":"EN-025","input":"remind me to call the doctor tomorrow morning at 9","expected_tool":"set_reminder","expected_params":{"text":"call the doctor"},"lang":"en","difficulty":"easy"}
+{"id":"EN-026","input":"reminder: pay the electric bill by March 15","expected_tool":"set_reminder","expected_params":{"text":"pay the electric bill"},"lang":"en","difficulty":"easy"}
+{"id":"EN-027","input":"remind me to take my medicine at 8pm","expected_tool":"set_reminder","expected_params":{"text":"take my medicine","datetime":"2026-03-08T20:00:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-028","input":"don't let me forget to buy flowers for tomorrow","expected_tool":"set_reminder","expected_params":{"text":"buy flowers"},"lang":"en","difficulty":"medium"}
+{"id":"EN-029","input":"I need to remember to email John tonight at 9","expected_tool":"set_reminder","expected_params":{"text":"email John"},"lang":"en","difficulty":"medium"}
+{"id":"EN-030","input":"set a reminder at 6pm: pick up dry cleaning","expected_tool":"set_reminder","expected_params":{"text":"pick up dry cleaning"},"lang":"en","difficulty":"medium"}
+{"id":"EN-031","input":"remind me of something important later","expected_tool":"set_reminder","expected_params":{},"lang":"en","difficulty":"ambiguous"}
+{"id":"EN-032","input":"set a reminder to pick up the package tomorrow afternoon at 3","expected_tool":"set_reminder","expected_params":{"text":"pick up the package"},"lang":"en","difficulty":"easy"}
+{"id":"EN-033","input":"please remind me to walk the dog at 7pm","expected_tool":"set_reminder","expected_params":{"text":"walk the dog","datetime":"2026-03-08T19:00:00"},"lang":"en","difficulty":"easy"}
+{"id":"EN-034","input":"remind me to buy Sara's gift by Friday","expected_tool":"set_reminder","expected_params":{"text":"buy Sara's gift"},"lang":"en","difficulty":"medium"}
+{"id":"EN-035","input":"reminder: condo meeting March 12 at 6pm","expected_tool":"set_reminder","expected_params":{"text":"condo meeting"},"lang":"en","difficulty":"easy"}
+{"id":"EN-036","input":"what's the recipe for carbonara?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-037","input":"who was Napoleon?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-038","input":"explain the theory of relativity in simple terms","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-039","input":"how does an internal combustion engine work?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-040","input":"tell me a joke","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-041","input":"what's the capital of Australia?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-042","input":"translate 'good morning' to Japanese","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-043","input":"how do you make tiramisu?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-044","input":"what's the difference between HTTP and HTTPS?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-045","input":"write me a poem about the sunset","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-046","input":"tell me 3 fun facts about the Moon","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-047","input":"what is machine learning?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-048","input":"why is the sky blue?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-049","input":"recommend a book to read","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
+{"id":"EN-050","input":"hey, how are you?","expected_tool":"general_chat","expected_params":{},"lang":"en","difficulty":"easy"}
