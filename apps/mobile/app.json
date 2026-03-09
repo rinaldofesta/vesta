@@ -37,6 +37,13 @@
     ],
     "ios": {
       "bundleIdentifier": "com.cosmico.vesta"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ef535371-567c-4a87-b806-a86a82ca889a"
+      }
+    },
+    "owner": "rldfst90"
   }
 }
