@@ -38,8 +38,8 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 
 ## Features
 
-**On-Device LLM**
-Runs Qwen3 4B (Q4_K_M) locally via [llama.rn](https://github.com/nickhoo555/llama.rn). No cloud, no API calls, no latency spikes.
+**On-Device LLM — Bring Your Own Model**
+Runs any GGUF model locally via [llama.rn](https://github.com/nickhoo555/llama.rn). Pick the model that fits your device and your language — no cloud, no API calls, no vendor lock-in.
 
 **System Actions**
 Natural language maps to real Android intents — `"svegliami alle 7"` actually sets an alarm at 07:00.
@@ -91,7 +91,7 @@ Full architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Node.js 18+
 - Android SDK (API 34+)
 - Java 17
-- A GGUF model file (e.g., [Qwen3 4B Q4_K_M](https://huggingface.co/Qwen/Qwen3-4B-GGUF))
+- A GGUF model file — any model works! We recommend 3B–8B parameter models for phones (e.g., [Qwen3 4B](https://huggingface.co/Qwen/Qwen3-4B-GGUF), [Llama 3.2 3B](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF), [Gemma 3 4B](https://huggingface.co/bartowski/gemma-3-4b-it-GGUF))
 
 ### Setup
 
@@ -143,15 +143,15 @@ Use a table layout:
 
 ## Benchmark Results
 
-We benchmarked 3 models against 100 function-calling prompts (50 Italian, 50 English) before writing a single line of app code.
+Vesta is model-agnostic — you load whatever GGUF model you prefer. To validate the architecture, we benchmarked several models against 100 function-calling prompts (50 Italian, 50 English) before writing a single line of app code.
 
 | Model | Tool Accuracy | JSON Valid | Latency | Gate |
 |-------|:---:|:---:|:---:|:---:|
-| **Qwen3 4B** | **97.8%** | **98.9%** | 18.3s | **PASS** |
+| Qwen3 4B | **97.8%** | **98.9%** | 18.3s | **PASS** |
 | Llama 3.2 3B | ~94% | ~91% | 3.3s | PASS |
 | Qwen3 8B | ~90% | ~88% | 25s | BORDERLINE |
 
-Key finding: system prompt engineering moved accuracy from 42% to 98%. Details in [docs/FASE0-RESULTS.md](docs/FASE0-RESULTS.md).
+These results are specific to our benchmark dataset and system prompt. Your mileage may vary — and that's the point: try different models, find what works best for your device and language. Key finding: system prompt engineering moved accuracy from 42% to 98%. Details in [docs/FASE0-RESULTS.md](docs/FASE0-RESULTS.md).
 
 ---
 
@@ -159,7 +159,7 @@ Key finding: system prompt engineering moved accuracy from 42% to 98%. Details i
 
 | Phase | Status | Description |
 |-------|:---:|-------------|
-| **Fase 0** — Model Validation | Done | Benchmark 3 models, choose winner, finalize system prompt |
+| **Fase 0** — Model Validation | Done | Benchmark models, validate architecture, finalize system prompt |
 | **Fase 1** — Android MVP | In Progress | Chat UI, 4 tools, orchestrator, conversation history, memory |
 | **Fase 2** — Core Polish | Planned | 10 tools, multi-turn context, error recovery |
 | **Fase 3** — Document Intelligence | Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
@@ -181,7 +181,7 @@ Full roadmap with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md)
 | Orchestrator | TypeScript | Cross-platform logic, strong typing |
 | Database | SQLite (expo-sqlite) | Zero config, native performance |
 | State | Zustand | Minimal, fast, TypeScript-friendly |
-| Primary Model | Qwen3 4B (Q4_K_M) | 97.8% accuracy, ~3GB RAM, bilingual |
+| Models | Any GGUF via llama.cpp | Bring your own — tested with 3B to 8B models |
 
 ---
 
@@ -236,7 +236,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) — The engine that makes on-device LLM possible
 - [llama.rn](https://github.com/nickhoo555/llama.rn) — React Native bindings for llama.cpp
 - [Expo](https://expo.dev) — Making React Native development sane
-- [Qwen3](https://huggingface.co/Qwen) — The model that powers Vesta's intelligence
+- [Qwen](https://huggingface.co/Qwen), [Meta Llama](https://huggingface.co/meta-llama), [Google Gemma](https://huggingface.co/google) — Models we tested against
 - [Zustand](https://github.com/pmndrs/zustand) — State management that gets out of the way
 
 ---
