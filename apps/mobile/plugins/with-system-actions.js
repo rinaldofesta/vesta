@@ -1,8 +1,8 @@
-// Expo config plugin to register the SystemActionsPackage in MainApplication.
-// After `npx expo prebuild`, this plugin copies the Kotlin files into the android/ dir
-// and adds the package registration to the auto-generated MainApplication.
+// Expo config plugin for native modules: SystemActionsPackage + Vesta Widget.
+// After `npx expo prebuild`, this plugin copies Kotlin files and Android resources
+// into the android/ dir, registers packages, and adds the widget receiver to the manifest.
 
-const { withMainApplication, withDangerousMod } = require("expo/config-plugins");
+const { withMainApplication, withDangerousMod, withAndroidManifest } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
@@ -34,6 +34,33 @@ function withSystemActions(config) {
           fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
         }
       }
+
+      // Copy Android resource files (widget layout, drawables, values, xml)
+      const resSrcDir = path.join(
+        config.modRequest.projectRoot,
+        "native/android/src/main/res"
+      );
+      const resDestDir = path.join(
+        config.modRequest.platformProjectRoot,
+        "app/src/main/res"
+      );
+
+      if (fs.existsSync(resSrcDir)) {
+        for (const subDir of fs.readdirSync(resSrcDir)) {
+          const srcSubDir = path.join(resSrcDir, subDir);
+          const destSubDir = path.join(resDestDir, subDir);
+          if (fs.statSync(srcSubDir).isDirectory()) {
+            fs.mkdirSync(destSubDir, { recursive: true });
+            for (const file of fs.readdirSync(srcSubDir)) {
+              fs.copyFileSync(
+                path.join(srcSubDir, file),
+                path.join(destSubDir, file)
+              );
+            }
+          }
+        }
+      }
+
       return config;
     },
   ]);
@@ -104,6 +131,88 @@ function withSystemActions(config) {
     }
 
     config.modResults.contents = contents;
+    return config;
+  });
+
+  // Register the Vesta Widget receiver in AndroidManifest.xml
+  config = withAndroidManifest(config, (config) => {
+    const mainApplication = config.modResults.manifest.application[0];
+
+    if (!mainApplication.receiver) {
+      mainApplication.receiver = [];
+    }
+
+    // Register widget activities (transparent overlays)
+    if (!mainApplication.activity) {
+      mainApplication.activity = [];
+    }
+
+    // Quick chat dialog (floating input over home screen)
+    const hasQuickChat = mainApplication.activity.some(
+      (a) => a.$?.["android:name"] === ".VestaQuickChatActivity"
+    );
+    if (!hasQuickChat) {
+      mainApplication.activity.push({
+        $: {
+          "android:name": ".VestaQuickChatActivity",
+          "android:theme": "@android:style/Theme.Translucent.NoTitleBar",
+          "android:exported": "false",
+          "android:excludeFromRecents": "true",
+          "android:taskAffinity": "",
+          "android:windowSoftInputMode": "adjustResize",
+        },
+      });
+    }
+
+    // Voice input activity
+    const hasVoiceActivity = mainApplication.activity.some(
+      (a) => a.$?.["android:name"] === ".VestaVoiceActivity"
+    );
+    if (!hasVoiceActivity) {
+      mainApplication.activity.push({
+        $: {
+          "android:name": ".VestaVoiceActivity",
+          "android:theme": "@android:style/Theme.Translucent.NoTitleBar",
+          "android:exported": "false",
+          "android:excludeFromRecents": "true",
+          "android:taskAffinity": "",
+        },
+      });
+    }
+
+    const hasWidget = mainApplication.receiver.some(
+      (r) => r.$?.["android:name"] === ".VestaWidgetProvider"
+    );
+
+    if (!hasWidget) {
+      mainApplication.receiver.push({
+        $: {
+          "android:name": ".VestaWidgetProvider",
+          "android:exported": "true",
+          "android:label": "@string/widget_label",
+        },
+        "intent-filter": [
+          {
+            action: [
+              {
+                $: {
+                  "android:name": "android.appwidget.action.APPWIDGET_UPDATE",
+                },
+              },
+            ],
+          },
+        ],
+        "meta-data": [
+          {
+            $: {
+              "android:name": "android.appwidget.provider",
+              "android:resource": "@xml/vesta_widget_info",
+            },
+          },
+        ],
+      });
+    }
+
     return config;
   });
 

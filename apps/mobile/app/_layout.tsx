@@ -2,7 +2,9 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useChatStore } from "../lib/store/chat-store";
+import { colors } from "../lib/theme";
 
 export default function RootLayout() {
   const init = useChatStore((s) => s.init);
@@ -16,20 +18,22 @@ export default function RootLayout() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#16213e", justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#e94560" />
+      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <>
-      <StatusBar style="light" />
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: "#1a1a2e" },
-          headerTintColor: "#e0e0e0",
-          contentStyle: { backgroundColor: "#16213e" },
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.textPrimary,
+          headerTitleStyle: { fontWeight: "600", fontSize: 17 },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: colors.bg },
         }}
       >
         <Stack.Screen
@@ -37,10 +41,14 @@ export default function RootLayout() {
           options={{ title: "Vesta" }}
         />
         <Stack.Screen
+          name="history"
+          options={{ title: "Conversations" }}
+        />
+        <Stack.Screen
           name="settings"
           options={{ title: "Settings" }}
         />
       </Stack>
-    </>
+    </SafeAreaProvider>
   );
 }

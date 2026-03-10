@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label">Vesta</string>
+    <string name="widget_description">Chat with Vesta, your offline AI assistant</string>
+    <string name="widget_hint">Message Vesta\u2026</string>
+    <string name="widget_subtitle">Your offline assistant</string>
+</resources>

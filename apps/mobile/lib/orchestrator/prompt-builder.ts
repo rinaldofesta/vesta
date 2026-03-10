@@ -38,7 +38,11 @@ function formatDatetime(now: Date): string {
   return `${y}-${m}-${d}T${h}:${min}:${s}`;
 }
 
-export function buildSystemPrompt(lang: Language): string {
+export function buildSystemPrompt(
+  lang: Language,
+  memoriesBlock?: string | null,
+  knowledgeBlock?: string | null,
+): string {
   const now = new Date();
   const datetime = formatDatetime(now);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -47,12 +51,24 @@ export function buildSystemPrompt(lang: Language): string {
   const dayOfWeek = getDayOfWeek(now, lang);
   const toolsBlock = formatToolsForPrompt(lang);
 
+  const memoriesSection = memoriesBlock
+    ? lang === "it"
+      ? `\n\nCosa sai dell'utente:\n${memoriesBlock}\n\nUsa queste informazioni per personalizzare le risposte. Non menzionare esplicitamente che "ricordi" queste cose a meno che l'utente non chieda.`
+      : `\n\nWhat you know about the user:\n${memoriesBlock}\n\nUse this information to personalize responses. Don't explicitly mention that you "remember" these things unless the user asks.`
+    : "";
+
+  const knowledgeSection = knowledgeBlock
+    ? lang === "it"
+      ? `\n\nContesto personale dell'utente:\n${knowledgeBlock}\n\nQueste sono informazioni di riferimento fornite dall'utente. Usale per rispondere in modo più accurato e personalizzato.`
+      : `\n\nUser's personal context:\n${knowledgeBlock}\n\nThis is reference information provided by the user. Use it to respond more accurately and personally.`
+    : "";
+
   if (lang === "it") {
     return `Sei Vesta, un assistente personale che gira localmente sul dispositivo dell'utente.
 Rispondi in italiano.
 Data e ora corrente: ${datetime} (${timezone})
 Oggi è ${dayOfWeek}, ${today}.
-Domani è ${tomorrow}.
+Domani è ${tomorrow}.${memoriesSection}${knowledgeSection}
 
 Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSON valido in questo formato:
 {
@@ -89,7 +105,7 @@ Se la richiesta non corrisponde a nessuno strumento d'azione, rispondi in testo 
 Respond in English.
 Current date and time: ${datetime} (${timezone})
 Today is ${dayOfWeek}, ${today}.
-Tomorrow is ${tomorrow}.
+Tomorrow is ${tomorrow}.${memoriesSection}${knowledgeSection}
 
 When the user asks you to perform an action, respond EXCLUSIVELY with valid JSON in this format:
 {

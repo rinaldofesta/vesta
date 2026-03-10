@@ -1,7 +1,44 @@
+# Dependencies
 node_modules/
+
+# Expo
 .expo/
 dist/
+web-build/
+
+# TypeScript
 *.tsbuildinfo
+
+# macOS
 .DS_Store
+
+# Secrets & keys
 *.pem
+*.jks
+*.keystore
+.env
+.env.*
 .env*.local
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+*.hprof
+
+# iOS
+ios/Pods/
+ios/build/
+
+# Model files (too large for git)
+*.gguf
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/

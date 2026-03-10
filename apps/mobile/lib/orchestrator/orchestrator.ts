@@ -1,5 +1,6 @@
 // Orchestrator — the core brain of Vesta.
 // Routes user messages through the LLM, parses tool calls, dispatches actions.
+// Now includes memory retrieval (inject into prompt) and extraction (post-response).
 
 import { generate, isLoaded } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
@@ -11,6 +12,8 @@ import type {
   Message,
 } from "./types";
 import { dispatchToolCall } from "./tool-dispatcher";
+import { getMemoriesForPrompt, extractMemories } from "./memory-manager";
+import { getKnowledgeForPrompt } from "./knowledge-manager";
 
 const MAX_HISTORY_MESSAGES = 20;
 
@@ -24,7 +27,19 @@ export async function processMessage(
     return { type: "error", error: "No model loaded" };
   }
 
-  const systemPrompt = buildSystemPrompt(lang);
+  // Fetch relevant memories and knowledge files for context injection
+  let memoriesBlock: string | null = null;
+  let knowledgeBlock: string | null = null;
+  try {
+    [memoriesBlock, knowledgeBlock] = await Promise.all([
+      getMemoriesForPrompt(),
+      getKnowledgeForPrompt(),
+    ]);
+  } catch (err) {
+    console.warn("[Orchestrator] Failed to fetch context:", err);
+  }
+
+  const systemPrompt = buildSystemPrompt(lang, memoriesBlock, knowledgeBlock);
 
   // Build conversation messages for the LLM
   const messages: CompletionMessage[] = [
@@ -63,12 +78,14 @@ export async function processMessage(
     // Try to parse as tool call
     const toolCall = parseResponse(raw);
 
+    let response: OrchestratorResponse;
+
     if (toolCall) {
       const toolResult = await dispatchToolCall(
         toolCall.tool,
         toolCall.parameters,
       );
-      return {
+      response = {
         type: "tool_call",
         tool: toolCall.tool,
         parameters: toolCall.parameters,
@@ -77,10 +94,17 @@ export async function processMessage(
           (lang === "it" ? "Fatto!" : "Done!"),
         result: toolResult,
       };
+    } else {
+      // Plain text response — keep think tags for styled UI rendering
+      response = { type: "text", content: raw };
     }
 
-    // Plain text response — strip any remaining think tags
-    return { type: "text", content: stripThinkTags(raw) };
+    // Fire-and-forget: extract memories from this exchange
+    const assistantContent =
+      response.type === "text" ? stripThinkTags(response.content) : response.message;
+    extractMemories(userText, assistantContent, "", lang).catch(() => {});
+
+    return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { type: "error", error: message };

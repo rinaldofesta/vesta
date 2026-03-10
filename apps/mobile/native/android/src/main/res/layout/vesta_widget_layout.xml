@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp">
+
+    <!-- Top area: Logo + name (tap opens app) -->
+    <LinearLayout
+        android:id="@+id/widget_header"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageView
+            android:id="@+id/widget_flame_icon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@drawable/ic_vesta_flame"
+            android:contentDescription="@string/widget_label" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginStart="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vesta"
+                android:textColor="@color/vesta_text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/widget_subtitle"
+                android:textColor="@color/vesta_text_placeholder"
+                android:textSize="12sp"
+                android:layout_marginTop="1dp" />
+
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom: Chat bar -->
+    <LinearLayout
+        android:id="@+id/widget_chat_bar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_chat_bar_bg"
+        android:paddingStart="16dp"
+        android:paddingEnd="5dp">
+
+        <!-- Placeholder text (tap opens quick chat) -->
+        <TextView
+            android:id="@+id/widget_chat_text"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:text="@string/widget_hint"
+            android:textColor="@color/vesta_text_placeholder"
+            android:textSize="15sp" />
+
+        <!-- Mic button (accent circle) -->
+        <FrameLayout
+            android:id="@+id/widget_mic_btn"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/widget_mic_circle_bg"
+            android:contentDescription="Voice input">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_vesta_mic_white"
+                android:contentDescription="Voice input" />
+        </FrameLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

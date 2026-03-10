@@ -4,28 +4,27 @@
     "slug": "vesta",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "icon": "./assets/brand/vesta-app-icon-1024x1024.png",
+    "userInterfaceStyle": "light",
     "scheme": "vesta",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/brand/vesta-flame-logo-1024x1024.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1a1a2e"
+      "backgroundColor": "#F8F5F1"
     },
     "android": {
       "package": "com.cosmico.vesta",
       "adaptiveIcon": {
-        "backgroundColor": "#1a1a2e",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#F8F5F1",
+        "foregroundImage": "./assets/brand/vesta-flame-logo-1024x1024.png"
       },
       "permissions": [
         "com.android.alarm.permission.SET_ALARM",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.FOREGROUND_SERVICE"
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [

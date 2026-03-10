@@ -1,17 +1,23 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState, useLayoutEffect } from "react";
 import {
   View,
   FlatList,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
+  Linking,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 import { useChatStore } from "../lib/store/chat-store";
-import { ChatBubble } from "../components/ChatBubble";
+import { ChatBubble, StreamingBubble } from "../components/ChatBubble";
 import { ChatInput } from "../components/ChatInput";
+import type { ChatInputHandle } from "../components/ChatInput";
+import { FlameIndicator } from "../components/FlameIndicator";
+import { colors, spacing, typography, radii } from "../lib/theme";
 import type { Message } from "../lib/orchestrator/types";
 
 const StreamingFooter = React.memo(function StreamingFooter({
@@ -22,19 +28,42 @@ const StreamingFooter = React.memo(function StreamingFooter({
   streamingText: string;
 }) {
   if (!isGenerating) return null;
-  return (
-    <View style={[styles.row, styles.rowAssistant]}>
-      <View style={styles.streamBubble}>
-        <Text style={styles.streamText}>{streamingText || "..."}</Text>
-      </View>
-    </View>
-  );
+
+  // Show flame indicator when waiting for first token, streaming bubble once text arrives
+  if (!streamingText) return <FlameIndicator />;
+  return <StreamingBubble text={streamingText} />;
 });
+
+/** Hook: track keyboard height on Android via Keyboard events. */
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  return height;
+}
 
 export default function ChatScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const flatListRef = useRef<FlatList<Message>>(null);
   const lastScrollRef = useRef(0);
+  const chatInputRef = useRef<ChatInputHandle>(null);
+  const keyboardHeight = useKeyboardHeight();
+  const handledUrlRef = useRef<string | null>(null);
 
   const messages = useChatStore((s) => s.messages);
   const isGenerating = useChatStore((s) => s.isGenerating);
@@ -42,6 +71,77 @@ export default function ChatScreen() {
   const modelLoaded = useChatStore((s) => s.modelLoaded);
   const error = useChatStore((s) => s.error);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const conversationTitle = useChatStore((s) => s.conversationTitle);
+  const clearConversation = useChatStore((s) => s.clearConversation);
+
+  // Dynamic header with history + new chat buttons
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: conversationTitle || "Vesta",
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => router.push("/history")}
+          style={styles.headerBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.headerBtnText}>&#9776;</Text>
+        </TouchableOpacity>
+      ),
+      headerRight: () => (
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={clearConversation}
+            style={styles.headerBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.headerBtnText}>+</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/settings")}
+            style={styles.headerBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.headerBtnText}>&#9881;</Text>
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation, conversationTitle, clearConversation]);
+
+  // Handle deep links from widget (voice text or focus request)
+  const handleDeepLink = (url: string) => {
+    if (!url || url === handledUrlRef.current) return;
+    handledUrlRef.current = url;
+
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname === "chat" || parsed.pathname === "/chat") {
+        const voiceText = parsed.searchParams.get("voice_text");
+        const focus = parsed.searchParams.get("focus");
+
+        if (voiceText && modelLoaded) {
+          // Auto-send voice transcription
+          setTimeout(() => sendMessage(voiceText), 300);
+        } else if (focus) {
+          // Focus the input
+          setTimeout(() => chatInputRef.current?.focus(), 300);
+        }
+      }
+    } catch {}
+  };
+
+  // Check initial URL (cold launch from widget)
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink(url);
+    });
+  }, [modelLoaded]);
+
+  // Listen for new URLs (warm launch from widget)
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", ({ url }) => handleDeepLink(url));
+    return () => sub.remove();
+  }, [modelLoaded]);
 
   // Scroll on new complete messages
   useEffect(() => {
@@ -61,19 +161,23 @@ export default function ChatScreen() {
     }
   }, [isGenerating, streamingText]);
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-    >
+  // Scroll when keyboard opens
+  useEffect(() => {
+    if (keyboardHeight > 0 && messages.length > 0) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  }, [keyboardHeight]);
+
+  const chatContent = (
+    <>
       {!modelLoaded && (
         <TouchableOpacity
           style={styles.banner}
           onPress={() => router.push("/settings")}
+          activeOpacity={0.8}
         >
           <Text style={styles.bannerText}>
-            No model loaded. Tap to load a model.
+            No model loaded — tap to configure
           </Text>
         </TouchableOpacity>
       )}
@@ -90,8 +194,16 @@ export default function ChatScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <ChatBubble message={item} />}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         ListEmptyComponent={
           <View style={styles.empty}>
+            <View style={styles.logoCircle}>
+              <Image
+                source={require("../assets/brand/vesta-flame-logo-1024x1024.png")}
+                style={styles.logoImage}
+              />
+            </View>
             <Text style={styles.emptyTitle}>Vesta</Text>
             <Text style={styles.emptySubtitle}>
               Intelligence that never leaves home.
@@ -103,7 +215,27 @@ export default function ChatScreen() {
         }
       />
 
-      <ChatInput onSend={sendMessage} disabled={isGenerating || !modelLoaded} />
+      <ChatInput ref={chatInputRef} onSend={sendMessage} disabled={isGenerating || !modelLoaded} />
+    </>
+  );
+
+  // Android: manually pad for keyboard since adjustResize may not work in dev client
+  if (Platform.OS === "android") {
+    return (
+      <View style={[styles.container, { paddingBottom: keyboardHeight }]}>
+        {chatContent}
+      </View>
+    );
+  }
+
+  // iOS: standard KeyboardAvoidingView
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="padding"
+      keyboardVerticalOffset={90}
+    >
+      {chatContent}
     </KeyboardAvoidingView>
   );
 }
@@ -111,29 +243,36 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#16213e",
+    backgroundColor: colors.bg,
   },
   banner: {
-    backgroundColor: "#e94560",
-    padding: 12,
+    backgroundColor: colors.accentSoft,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.lg,
     alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   bannerText: {
-    color: "#fff",
+    color: colors.accent,
     fontWeight: "600",
     fontSize: 14,
   },
   errorBanner: {
-    backgroundColor: "#c0392b",
-    padding: 8,
+    backgroundColor: colors.errorBg,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.lg,
     alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.error,
   },
   errorText: {
-    color: "#fff",
+    color: colors.error,
     fontSize: 13,
+    fontWeight: "500",
   },
   list: {
-    paddingVertical: 8,
+    paddingVertical: spacing.md,
     flexGrow: 1,
   },
   empty: {
@@ -142,35 +281,47 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 120,
   },
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  logoImage: {
+    width: 40,
+    height: 40,
+    resizeMode: "contain",
+  },
   emptyTitle: {
-    color: "#e94560",
-    fontSize: 32,
-    fontWeight: "bold",
+    color: colors.textPrimary,
+    ...typography.heading,
   },
   emptySubtitle: {
-    color: "#666",
-    fontSize: 14,
+    color: colors.textMuted,
+    fontSize: 15,
     marginTop: 8,
     fontStyle: "italic",
   },
-  row: {
-    paddingHorizontal: 12,
-    marginVertical: 4,
+  // Header buttons
+  headerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.accentMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 4,
   },
-  rowAssistant: {
-    alignItems: "flex-start",
+  headerBtnText: {
+    fontSize: 18,
+    color: colors.accent,
+    fontWeight: "600",
   },
-  streamBubble: {
-    maxWidth: "80%",
-    backgroundColor: "#1a1a2e",
-    borderRadius: 16,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  streamText: {
-    color: "#999",
-    fontSize: 15,
-    lineHeight: 21,
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
   },
 });

@@ -137,9 +137,9 @@ export function generate(
         : undefined,
     );
 
-    // Use `content` (filtered text without reasoning) as primary output.
-    // Fall back to `text` (raw output) if content is null/undefined.
-    const text = result.content ?? result.text;
+    // Use raw `text` so <think> blocks are preserved for UI rendering.
+    // The orchestrator / response-parser strips them when needed for tool parsing.
+    const text = result.text;
 
     return {
       text,

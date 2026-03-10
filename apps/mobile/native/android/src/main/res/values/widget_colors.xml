@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Vesta Pastel Palette (mirrored from lib/theme.ts) -->
+    <color name="vesta_bg">#FFF8F5F1</color>
+    <color name="vesta_surface">#FFFFFFFF</color>
+    <color name="vesta_accent">#FFC07A56</color>
+    <color name="vesta_accent_soft">#FFE8CEBE</color>
+    <color name="vesta_text_primary">#FF2C2620</color>
+    <color name="vesta_text_placeholder">#FFC4BAB0</color>
+    <color name="vesta_border">#FFE5DED5</color>
+</resources>
