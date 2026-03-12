@@ -34,10 +34,12 @@ const VALID_CATEGORIES = new Set<string>([
 
 // Prevent concurrent extraction runs
 let extractionRunning = false;
+const EXTRACTION_TIMEOUT_MS = 30_000;
 
 /**
  * Extract personal facts from a conversation exchange using the LLM.
  * Runs asynchronously — fire and forget. Skips if model is busy or unloaded.
+ * Includes a timeout to prevent the lock from being held forever if LLM hangs.
  */
 export async function extractMemories(
   userText: string,
@@ -47,6 +49,11 @@ export async function extractMemories(
 ): Promise<void> {
   if (!isLoaded() || extractionRunning) return;
   extractionRunning = true;
+
+  const timeoutId = setTimeout(() => {
+    console.warn("[MemoryManager] Extraction timed out, releasing lock");
+    extractionRunning = false;
+  }, EXTRACTION_TIMEOUT_MS);
 
   try {
     const systemPrompt =
@@ -81,6 +88,7 @@ Do not invent anything. Extract ONLY information explicitly stated by the user.`
   } catch (err) {
     console.warn("[MemoryManager] Extraction failed:", err);
   } finally {
+    clearTimeout(timeoutId);
     extractionRunning = false;
   }
 }

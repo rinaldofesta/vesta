@@ -102,7 +102,9 @@ export async function processMessage(
     // Fire-and-forget: extract memories from this exchange
     const assistantContent =
       response.type === "text" ? stripThinkTags(response.content) : response.message;
-    extractMemories(userText, assistantContent, "", lang).catch(() => {});
+    extractMemories(userText, assistantContent, "", lang).catch((err) => {
+      console.warn("[Orchestrator] Memory extraction failed:", err);
+    });
 
     return response;
   } catch (err) {

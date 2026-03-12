@@ -9,6 +9,28 @@ import {
   setReminder,
 } from "../native/system-actions";
 
+const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
+  "HH:MM": (v) => {
+    if (!/^\d{1,2}:\d{2}$/.test(v)) return `Expected HH:MM, got "${v}"`;
+    const [h, m] = v.split(":").map(Number);
+    if (h < 0 || h > 23) return `Hours must be 0-23, got ${h}`;
+    if (m < 0 || m > 59) return `Minutes must be 0-59, got ${m}`;
+    return null;
+  },
+  "YYYY-MM-DD": (v) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return `Expected YYYY-MM-DD, got "${v}"`;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return `Invalid date: "${v}"`;
+    return null;
+  },
+  ISO8601: (v) => {
+    // Accept common ISO 8601 variants: with/without seconds, with/without timezone
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return `Invalid ISO 8601 datetime: "${v}"`;
+    return null;
+  },
+};
+
 function validateParams(
   tool: string,
   params: Record<string, unknown>,
@@ -16,18 +38,30 @@ function validateParams(
   const def = MVP_TOOLS.find((t) => t.name === tool);
   if (!def) return `Unknown tool: ${tool}`;
 
+  // Validate required params exist and have correct type
   for (const req of def.parameters.required) {
     if (params[req] === undefined || params[req] === null) {
       return `Missing required parameter: ${req}`;
     }
-    const expectedType = def.parameters.properties[req]?.type;
-    if (expectedType === "string" && typeof params[req] !== "string") {
+    const prop = def.parameters.properties[req];
+    if (prop?.type === "string" && typeof params[req] !== "string") {
       return `Parameter "${req}" must be a string, got ${typeof params[req]}`;
     }
-    if (expectedType === "number" && typeof params[req] !== "number") {
+    if (prop?.type === "number" && typeof params[req] !== "number") {
       return `Parameter "${req}" must be a number, got ${typeof params[req]}`;
     }
   }
+
+  // Validate format constraints on all provided string params
+  for (const [key, prop] of Object.entries(def.parameters.properties)) {
+    const value = params[key];
+    if (value === undefined || value === null || typeof value !== "string") continue;
+    if (prop.format && FORMAT_VALIDATORS[prop.format]) {
+      const formatError = FORMAT_VALIDATORS[prop.format](value);
+      if (formatError) return `Parameter "${key}": ${formatError}`;
+    }
+  }
+
   return null;
 }
 

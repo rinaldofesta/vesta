@@ -97,7 +97,11 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
     `);
     db = database;
     return database;
-  })();
+  })().catch((err) => {
+    // Reset so future calls can retry instead of returning the rejected promise forever
+    dbPromise = null;
+    throw err;
+  });
 
   return dbPromise;
 }
