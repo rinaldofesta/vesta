@@ -173,11 +173,11 @@ export default function ChatScreen() {
       {!modelLoaded && (
         <TouchableOpacity
           style={styles.banner}
-          onPress={() => router.push("/settings")}
+          onPress={() => router.push("/models")}
           activeOpacity={0.8}
         >
           <Text style={styles.bannerText}>
-            No model loaded — tap to configure
+            No model yet — tap to download one
           </Text>
         </TouchableOpacity>
       )}
