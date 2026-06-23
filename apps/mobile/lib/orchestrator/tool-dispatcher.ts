@@ -3,11 +3,9 @@
 
 import type { ToolCallResult } from "./types";
 import { MVP_TOOLS } from "../tools/tool-registry";
-import {
-  setAlarm,
-  createEvent,
-  setReminder,
-} from "../native/system-actions";
+import { setAlarm, createEvent } from "../native/system-actions";
+import { scheduleReminder } from "../native/reminders";
+import { isValidYMD } from "./date-utils";
 
 const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
   "HH:MM": (v) => {
@@ -18,9 +16,8 @@ const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
     return null;
   },
   "YYYY-MM-DD": (v) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return `Expected YYYY-MM-DD, got "${v}"`;
-    const d = new Date(v);
-    if (isNaN(d.getTime())) return `Invalid date: "${v}"`;
+    // Strict: rejects impossible days like 2026-02-30 (new Date() would roll over).
+    if (!isValidYMD(v)) return `Expected a valid YYYY-MM-DD date, got "${v}"`;
     return null;
   },
   ISO8601: (v) => {
@@ -92,7 +89,8 @@ export async function dispatchToolCall(
         );
 
       case "set_reminder":
-        return await setReminder(
+        // Schedules a real local notification (offline), not a calendar insert.
+        return await scheduleReminder(
           parameters.text as string,
           parameters.datetime as string,
         );
