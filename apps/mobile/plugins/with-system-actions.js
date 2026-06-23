@@ -213,6 +213,32 @@ function withSystemActions(config) {
       });
     }
 
+    // Register VestaService (foreground service) in manifest
+    if (!mainApplication.service) {
+      mainApplication.service = [];
+    }
+
+    const hasService = mainApplication.service.some(
+      (s) => s.$?.["android:name"] === ".VestaService"
+    );
+    if (!hasService) {
+      mainApplication.service.push({
+        $: {
+          "android:name": ".VestaService",
+          "android:foregroundServiceType": "specialUse",
+          "android:exported": "false",
+        },
+        property: [
+          {
+            $: {
+              "android:name": "android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE",
+              "android:value": "Keeps AI model loaded in memory for offline inference",
+            },
+          },
+        ],
+      });
+    }
+
     return config;
   });
 

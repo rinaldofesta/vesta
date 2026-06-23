@@ -9,7 +9,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class SystemActionsPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(SystemActionsModule(reactContext))
+        return listOf(SystemActionsModule(reactContext), VestaServiceModule(reactContext))
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<View, ReactShadowNode<*>>> {
