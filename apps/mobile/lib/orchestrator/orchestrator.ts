@@ -18,8 +18,20 @@ import {
   shouldExtractMemory,
 } from "./memory-manager";
 import { getKnowledgeForPrompt } from "./knowledge-manager";
+import { getConfig } from "../storage/database";
+import { toolRequiresConfirmation } from "../tools/tool-registry";
+import type { ToolCallResult } from "./types";
 
 const MAX_HISTORY_MESSAGES = 20;
+
+// Runs a confirmed tool call. Called by the store after the user approves a
+// pending (destructive) action; routing already validated the tool name.
+export function executeToolCall(
+  tool: string,
+  parameters: Record<string, unknown>,
+): Promise<ToolCallResult> {
+  return dispatchToolCall(tool, parameters);
+}
 
 export async function processMessage(
   userText: string,
@@ -31,14 +43,20 @@ export async function processMessage(
     return { type: "error", error: "No model loaded" };
   }
 
-  // Fetch relevant memories and knowledge files for context injection
+  // Fetch relevant memories and knowledge files for context injection, plus the
+  // destructive-action confirmation setting (default ON for safety).
   let memoriesBlock: string | null = null;
   let knowledgeBlock: string | null = null;
+  let confirmEnabled = true;
   try {
-    [memoriesBlock, knowledgeBlock] = await Promise.all([
+    const [m, k, confirmCfg] = await Promise.all([
       getMemoriesForPrompt(),
       getKnowledgeForPrompt(),
+      getConfig("confirm_destructive_actions"),
     ]);
+    memoriesBlock = m;
+    knowledgeBlock = k;
+    confirmEnabled = confirmCfg !== "false";
   } catch (err) {
     console.warn("[Orchestrator] Failed to fetch context:", err);
   }
@@ -92,19 +110,30 @@ export async function processMessage(
     let response: OrchestratorResponse;
 
     if (toolCall) {
-      const toolResult = await dispatchToolCall(
-        toolCall.tool,
-        toolCall.parameters,
-      );
-      response = {
-        type: "tool_call",
-        tool: toolCall.tool,
-        parameters: toolCall.parameters,
-        message:
-          toolCall.message ||
-          (lang === "it" ? "Fatto!" : "Done!"),
-        result: toolResult,
-      };
+      const confirmMessage =
+        toolCall.message || (lang === "it" ? "Fatto!" : "Done!");
+      if (toolRequiresConfirmation(toolCall.tool, confirmEnabled)) {
+        // Don't touch the device yet — hand the proposed action to the UI for
+        // explicit user confirmation. The store dispatches it via executeToolCall.
+        response = {
+          type: "pending_tool_call",
+          tool: toolCall.tool,
+          parameters: toolCall.parameters,
+          message: confirmMessage,
+        };
+      } else {
+        const toolResult = await dispatchToolCall(
+          toolCall.tool,
+          toolCall.parameters,
+        );
+        response = {
+          type: "tool_call",
+          tool: toolCall.tool,
+          parameters: toolCall.parameters,
+          message: confirmMessage,
+          result: toolResult,
+        };
+      }
     } else {
       // Plain text response — keep think tags for styled UI rendering
       response = { type: "text", content: raw };
@@ -114,7 +143,9 @@ export async function processMessage(
     // can't yield a useful fact (tool-call confirmations, greetings/acks). This
     // avoids a second full LLM pass that, because the engine serializes all
     // generation, would otherwise stall the user's next message (ORCH-1).
-    if (shouldExtractMemory(userText, response.type === "tool_call")) {
+    const isToolTurn =
+      response.type === "tool_call" || response.type === "pending_tool_call";
+    if (shouldExtractMemory(userText, isToolTurn)) {
       const assistantContent =
         response.type === "text" ? stripThinkTags(response.content) : response.message;
       extractMemories(userText, assistantContent, "", lang).catch((err) => {
