@@ -40,6 +40,10 @@ export interface DownloadParams {
   url: string;
   fileName: string; // final name inside MODELS_DIR
   expectedBytes: number; // 0 = unknown (skip preflight + size verify)
+  // Whether expectedBytes is authoritative (from the HF tree API) and may be
+  // used to reject a truncated download. False for the catalog's approximate
+  // size, which must not fail a genuinely complete download.
+  verifySize?: boolean;
   headers?: Record<string, string>;
   resumeToken?: string | null;
   onProgress?: (p: {
@@ -86,6 +90,7 @@ export async function downloadModel(
     url,
     fileName,
     expectedBytes,
+    verifySize = true,
     headers,
     resumeToken,
     onProgress,
@@ -173,9 +178,12 @@ export async function downloadModel(
       return { ok: false, error: "Downloaded file is missing." };
     }
     const actualSize = info.size ?? 0;
+    // Only reject against an authoritative size; the catalog's approximate size
+    // must never fail a complete download. A truncation is always smaller.
     if (
+      verifySize &&
       expectedBytes > 0 &&
-      Math.abs(actualSize - expectedBytes) > SIZE_TOLERANCE_BYTES
+      actualSize < expectedBytes - SIZE_TOLERANCE_BYTES
     ) {
       await safeDelete(tempPath);
       return {

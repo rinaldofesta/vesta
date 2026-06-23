@@ -97,6 +97,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
     // Resolve the actual downloadable file from the live repo tree; fall back to
     // the catalog hint if the network/listing is unavailable.
     let file: HfFile;
+    let exactSize = true; // size came from the HF tree API → safe to verify
     try {
       const files = await listGgufFiles(model.hfRepo);
       const picked = pickFile(files, model.preferredFile, model.quant);
@@ -110,17 +111,19 @@ export const useModelStore = create<ModelState>((set, get) => ({
         });
         return;
       }
-      // Network/listing failure — fall back to the catalog's best guess.
+      // Network/listing failure — fall back to the catalog's approximate size.
       file = {
         path: model.preferredFile,
         sizeBytes: model.sizeBytesApprox,
         sha256: null,
       };
+      exactSize = false;
     }
 
     await runDownload(set, get, {
       repo: model.hfRepo,
       file,
+      exactSize,
       displayName: model.displayName,
       quant: model.quant,
       minRamMb: model.minRamMb,
@@ -134,6 +137,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
     await runDownload(set, get, {
       repo,
       file,
+      exactSize: true,
       displayName,
       quant: null,
       minRamMb: null,
@@ -247,6 +251,7 @@ async function runDownload(
   args: {
     repo: string;
     file: HfFile;
+    exactSize: boolean;
     displayName: string;
     quant: string | null;
     minRamMb: number | null;
@@ -290,6 +295,7 @@ async function runDownload(
     url: resolveUrl(args.repo, args.file.path),
     fileName,
     expectedBytes: args.file.sizeBytes,
+    verifySize: args.exactSize,
     onProgress: (p) =>
       set((s) => ({
         progress: {
