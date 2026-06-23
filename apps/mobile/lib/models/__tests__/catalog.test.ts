@@ -20,7 +20,15 @@ describe("CATALOG", () => {
   });
 
   it("lookup by id works", () => {
-    expect(getCatalogModel("qwen3-4b-q4")?.displayName).toBe("Qwen3 4B");
+    expect(getCatalogModel("qwen3-4b-instruct-2507")?.displayName).toBe(
+      "Qwen3 4B Instruct (2507)",
+    );
     expect(getCatalogModel("nope")).toBeUndefined();
+  });
+
+  it("the recommended primary is the non-thinking Instruct-2507 build", () => {
+    const primary = getCatalogModel("qwen3-4b-instruct-2507");
+    expect(primary?.hfRepo).toBe("unsloth/Qwen3-4B-Instruct-2507-GGUF");
+    expect(primary?.supportsTools).toBe(true);
   });
 });
