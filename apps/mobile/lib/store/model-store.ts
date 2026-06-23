@@ -22,9 +22,9 @@ import {
   deleteModelFile,
   ensureModelsDir,
   modelPathFor,
-  getFreeBytes,
 } from "../models/download-manager";
 import { listGgufFiles, resolveUrl, type HfFile } from "../models/hf-client";
+import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
 import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
 import { useChatStore } from "./chat-store";
 
@@ -56,6 +56,7 @@ interface ModelState {
   installed: InstalledModel[];
   progress: Record<string, DownloadProgress>;
   freeBytes: number | null;
+  caps: DeviceCaps | null;
   busy: boolean;
   error: string | null;
 
@@ -77,15 +78,17 @@ export const useModelStore = create<ModelState>((set, get) => ({
   installed: [],
   progress: {},
   freeBytes: null,
+  caps: null,
   busy: false,
   error: null,
 
   refresh: async () => {
-    const [installed, freeBytes] = await Promise.all([
-      listInstalled(),
-      getFreeBytes(),
-    ]);
-    set({ installed, freeBytes: Number.isFinite(freeBytes) ? freeBytes : null });
+    const [installed, caps] = await Promise.all([listInstalled(), getDeviceCaps()]);
+    set({
+      installed,
+      caps,
+      freeBytes: Number.isFinite(caps.freeBytes) ? caps.freeBytes : null,
+    });
   },
 
   downloadFromCatalog: async (model: CatalogModel) => {

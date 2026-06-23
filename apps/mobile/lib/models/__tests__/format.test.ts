@@ -6,6 +6,7 @@ import {
   hasEnoughSpace,
   ramFit,
   percent,
+  fitLabel,
 } from "../format";
 
 describe("formatBytes", () => {
@@ -83,5 +84,34 @@ describe("percent", () => {
     expect(percent(50, 100)).toBe(50);
     expect(percent(150, 100)).toBe(100);
     expect(percent(1, 0)).toBe(0);
+  });
+});
+
+describe("fitLabel", () => {
+  const GB = 1024 * 1024 * 1024;
+  it("flags insufficient storage as a hard blocker", () => {
+    // 8 GB model, only 1 GB free → can't even download regardless of RAM
+    const f = fitLabel(8192, 16000, 8 * GB, 1 * GB);
+    expect(f.level).toBe("insufficient");
+    expect(f.text).toBe("Not enough storage");
+  });
+  it("says it runs on a roomy device (Pixel 10 Pro, 16 GB)", () => {
+    const f = fitLabel(8192, 16000, 5 * GB, 40 * GB);
+    expect(f.level).toBe("ok");
+    expect(f.text).toBe("Runs on your device");
+  });
+  it("flags a tight RAM fit", () => {
+    const f = fitLabel(8192, 9000, 5 * GB, 40 * GB);
+    expect(f.level).toBe("tight");
+  });
+  it("flags insufficient RAM", () => {
+    const f = fitLabel(8192, 4096, 5 * GB, 40 * GB);
+    expect(f.level).toBe("insufficient");
+    expect(f.text).toBe("Needs more RAM");
+  });
+  it("is unknown (no badge) when RAM is undetected", () => {
+    const f = fitLabel(8192, null, 5 * GB, 40 * GB);
+    expect(f.level).toBe("unknown");
+    expect(f.text).toBe("");
   });
 });

@@ -13,6 +13,9 @@ export interface GenerateOptions {
   temperature?: number;
   topP?: number;
   stopSequences?: string[];
+  // When false, suppresses Qwen3-style chain-of-thought for this turn (faster).
+  // Leave undefined to use the model's default (thinking on).
+  enableThinking?: boolean;
 }
 
 export interface ModelInfo {

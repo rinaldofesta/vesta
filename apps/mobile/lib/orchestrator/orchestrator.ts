@@ -12,7 +12,11 @@ import type {
   Message,
 } from "./types";
 import { dispatchToolCall } from "./tool-dispatcher";
-import { getMemoriesForPrompt, extractMemories } from "./memory-manager";
+import {
+  getMemoriesForPrompt,
+  extractMemories,
+  shouldExtractMemory,
+} from "./memory-manager";
 import { getKnowledgeForPrompt } from "./knowledge-manager";
 
 const MAX_HISTORY_MESSAGES = 20;
@@ -72,7 +76,14 @@ export async function processMessage(
   messages.push({ role: "user", content: userText });
 
   try {
-    const result = await generate(messages, { maxTokens: 4096 }, onToken);
+    // Lower temperature than the engine default: this turn must emit clean
+    // tool-call JSON, and near-deterministic sampling improves validity and
+    // tool-selection consistency without hurting chat quality much (LLM-5).
+    const result = await generate(
+      messages,
+      { maxTokens: 4096, temperature: 0.3 },
+      onToken,
+    );
     const raw = result.text;
 
     // Try to parse as tool call
@@ -99,12 +110,17 @@ export async function processMessage(
       response = { type: "text", content: raw };
     }
 
-    // Fire-and-forget: extract memories from this exchange
-    const assistantContent =
-      response.type === "text" ? stripThinkTags(response.content) : response.message;
-    extractMemories(userText, assistantContent, "", lang).catch((err) => {
-      console.warn("[Orchestrator] Memory extraction failed:", err);
-    });
+    // Fire-and-forget: extract memories from this exchange — but skip turns that
+    // can't yield a useful fact (tool-call confirmations, greetings/acks). This
+    // avoids a second full LLM pass that, because the engine serializes all
+    // generation, would otherwise stall the user's next message (ORCH-1).
+    if (shouldExtractMemory(userText, response.type === "tool_call")) {
+      const assistantContent =
+        response.type === "text" ? stripThinkTags(response.content) : response.message;
+      extractMemories(userText, assistantContent, "", lang).catch((err) => {
+        console.warn("[Orchestrator] Memory extraction failed:", err);
+      });
+    }
 
     return response;
   } catch (err) {

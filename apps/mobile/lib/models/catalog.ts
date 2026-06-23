@@ -36,7 +36,7 @@ export const CATALOG: CatalogModel[] = [
     id: "qwen3-4b-q4",
     displayName: "Qwen3 4B",
     description:
-      "Recommended for phones. Best balance of quality and speed for Vesta's tool calls and chat.",
+      "Best all-round choice for modern phones. Strong tool calls and chat at a comfortable speed.",
     hfRepo: "Qwen/Qwen3-4B-GGUF",
     preferredFile: "Qwen3-4B-Q4_K_M.gguf",
     quant: "Q4_K_M",
@@ -54,7 +54,7 @@ export const CATALOG: CatalogModel[] = [
     id: "qwen3-8b-q4",
     displayName: "Qwen3 8B",
     description:
-      "Recommended for tablets / high-RAM devices. Higher quality, needs ~6 GB+ free RAM.",
+      "Highest quality. For flagship phones with 12 GB+ RAM (e.g. Pixel 10 Pro). Slower per token.",
     hfRepo: "Qwen/Qwen3-8B-GGUF",
     preferredFile: "Qwen3-8B-Q4_K_M.gguf",
     quant: "Q4_K_M",

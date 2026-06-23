@@ -19,6 +19,10 @@ import type { Language } from "./types";
 
 type MemoryCategory = Memory["category"];
 
+// Re-export the pure extraction gate (defined in a dependency-free module so it
+// can be unit-tested without the LLM engine).
+export { shouldExtractMemory } from "./memory-gate";
+
 interface ExtractedMemory {
   category: MemoryCategory;
   content: string;
@@ -74,9 +78,12 @@ Do not invent anything. Extract ONLY information explicitly stated by the user.`
       { role: "user", content: conversationSnippet },
     ];
 
+    // Extraction emits a tiny JSON array — thinking is pure waste here, and a
+    // small token cap keeps this background pass short on a phone (LLM-4).
     const result = await generate(messages, {
-      maxTokens: 512,
+      maxTokens: 256,
       temperature: 0.1,
+      enableThinking: false,
     });
 
     const raw = stripThinkTags(result.text);

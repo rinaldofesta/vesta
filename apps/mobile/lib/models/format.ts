@@ -77,3 +77,31 @@ export function percent(written: number, total: number): number {
   if (total <= 0) return 0;
   return Math.max(0, Math.min(100, (written / total) * 100));
 }
+
+export interface FitLabel {
+  level: "ok" | "tight" | "insufficient" | "unknown";
+  text: string;
+}
+
+// Human-facing fit badge for a model, combining RAM and free disk against the
+// real device. Disk is a hard blocker (can't even download); RAM is advisory.
+export function fitLabel(
+  minRamMb: number | null,
+  totalRamMb: number | null,
+  sizeBytes: number,
+  freeBytes: number | null,
+): FitLabel {
+  if (freeBytes != null && !hasEnoughSpace(freeBytes, sizeBytes)) {
+    return { level: "insufficient", text: "Not enough storage" };
+  }
+  switch (ramFit(minRamMb, totalRamMb)) {
+    case "ok":
+      return { level: "ok", text: "Runs on your device" };
+    case "tight":
+      return { level: "tight", text: "Tight fit — may be slow" };
+    case "insufficient":
+      return { level: "insufficient", text: "Needs more RAM" };
+    default:
+      return { level: "unknown", text: "" };
+  }
+}

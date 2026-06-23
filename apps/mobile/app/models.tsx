@@ -14,13 +14,14 @@ import { useModelStore } from "../lib/store/model-store";
 import { CATALOG } from "../lib/models/catalog";
 import { listGgufFiles, type HfFile } from "../lib/models/hf-client";
 import type { CatalogModel, InstalledModel } from "../lib/models/types";
-import { formatBytes, formatDuration, percent } from "../lib/models/format";
+import { formatBytes, formatDuration, percent, fitLabel, type FitLabel } from "../lib/models/format";
 import { colors, spacing, radii, typography } from "../lib/theme";
 
 export default function ModelsScreen() {
   const installed = useModelStore((s) => s.installed);
   const progress = useModelStore((s) => s.progress);
   const freeBytes = useModelStore((s) => s.freeBytes);
+  const caps = useModelStore((s) => s.caps);
   const error = useModelStore((s) => s.error);
   const busy = useModelStore((s) => s.busy);
   const refresh = useModelStore((s) => s.refresh);
@@ -69,9 +70,13 @@ export default function ModelsScreen() {
       <Text style={styles.notice}>
         Browsing or downloading a model is the only time Vesta uses the network, and only when you tap. Everything else stays on your device.
       </Text>
-      {freeBytes != null && (
-        <Text style={styles.freeSpace}>{formatBytes(freeBytes)} free on device</Text>
-      )}
+      <View style={styles.deviceRow}>
+        <Text style={styles.deviceText}>
+          {caps?.deviceName ?? "Your device"}
+          {caps?.totalRamMb ? ` · ${(caps.totalRamMb / 1024).toFixed(0)} GB RAM` : ""}
+          {freeBytes != null ? ` · ${formatBytes(freeBytes)} free` : ""}
+        </Text>
+      </View>
 
       {error && (
         <TouchableOpacity style={styles.errorBanner} onPress={clearError} activeOpacity={0.8}>
@@ -88,6 +93,7 @@ export default function ModelsScreen() {
           model={m}
           installed={installedByRepo(m.hfRepo)}
           progress={progress}
+          fit={fitLabel(m.minRamMb, caps?.totalRamMb ?? null, m.sizeBytesApprox, freeBytes)}
           onDownload={() => downloadFromCatalog(m)}
           onActivate={activate}
           onCancel={cancel}
@@ -141,6 +147,19 @@ export default function ModelsScreen() {
   );
 }
 
+function fitStyle(level: FitLabel["level"]) {
+  switch (level) {
+    case "ok":
+      return styles.fitOk;
+    case "tight":
+      return styles.fitTight;
+    case "insufficient":
+      return styles.fitBad;
+    default:
+      return styles.fitUnknown;
+  }
+}
+
 function ProgressBar({ written, total, etaSeconds }: { written: number; total: number; etaSeconds: number | null }) {
   const pct = percent(written, total);
   return (
@@ -160,6 +179,7 @@ function CatalogRow({
   model,
   installed,
   progress,
+  fit,
   onDownload,
   onActivate,
   onCancel,
@@ -168,6 +188,7 @@ function CatalogRow({
   model: CatalogModel;
   installed: InstalledModel | undefined;
   progress: Record<string, { bytesWritten: number; bytesTotal: number; etaSeconds: number | null; status: string }>;
+  fit: FitLabel;
   onDownload: () => void;
   onActivate: (id: string) => void;
   onCancel: (id: string) => void;
@@ -185,9 +206,14 @@ function CatalogRow({
         </Text>
       </View>
       <Text style={styles.rowDesc}>{model.description}</Text>
-      <Text style={styles.rowHint}>
-        Needs ~{Math.round(model.minRamMb / 1024)} GB RAM · {model.license}
-      </Text>
+      <View style={styles.fitRow}>
+        {fit.text !== "" && (
+          <Text style={[styles.fitBadge, fitStyle(fit.level)]}>{fit.text}</Text>
+        )}
+        <Text style={styles.rowHint}>
+          ~{Math.round(model.minRamMb / 1024)} GB RAM · {model.license}
+        </Text>
+      </View>
 
       {downloading && prog && (
         <ProgressBar written={prog.bytesWritten} total={prog.bytesTotal} etaSeconds={prog.etaSeconds} />
@@ -351,7 +377,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: 48 },
   notice: { color: colors.textMuted, ...typography.caption, lineHeight: 18, marginBottom: 6 },
-  freeSpace: { color: colors.textSecondary, fontSize: 13, fontWeight: "500", marginBottom: 8 },
+  deviceRow: { marginBottom: 8 },
+  deviceText: { color: colors.textSecondary, fontSize: 13, fontWeight: "500" },
+  fitRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  fitBadge: {
+    fontSize: 12,
+    fontWeight: "600",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.full,
+    overflow: "hidden",
+  },
+  fitOk: { color: colors.success, backgroundColor: colors.successBg },
+  fitTight: { color: colors.accent, backgroundColor: colors.accentMuted },
+  fitBad: { color: colors.error, backgroundColor: colors.accentMuted },
+  fitUnknown: { color: colors.textMuted },
   sectionTitle: { color: colors.textMuted, ...typography.sectionTitle, marginBottom: 10, marginTop: 20, marginLeft: 4 },
   card: {
     backgroundColor: colors.surface,
