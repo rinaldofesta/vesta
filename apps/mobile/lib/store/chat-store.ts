@@ -23,7 +23,12 @@ import {
   deleteConversation,
   updateMessageToolResult,
 } from "../storage/database";
-import { loadModel, isLoaded, getModelInfo } from "../llm/llm-engine";
+import {
+  loadModel,
+  isLoaded,
+  getModelInfo,
+  stopGeneration as llmStopGeneration,
+} from "../llm/llm-engine";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
 import { startVestaService } from "../native/vesta-service";
 import * as FileSystem from "expo-file-system/legacy";
@@ -56,6 +61,7 @@ interface ChatState {
   // Actions
   init: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
+  stopGenerating: () => void;
   resolveConfirmation: (confirmed: boolean) => Promise<void>;
   loadConversation: (id: string, title: string | null) => Promise<void>;
   clearConversation: () => void;
@@ -269,6 +275,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) {
       console.error("Failed to persist assistant message:", err);
     }
+  },
+
+  stopGenerating: () => {
+    // Signals the native layer to stop the active completion. The in-flight
+    // generate() then resolves with the partial text and sendMessage finishes
+    // normally (appending what was produced and flipping isGenerating off).
+    llmStopGeneration().catch(() => {});
   },
 
   resolveConfirmation: async (confirmed: boolean) => {

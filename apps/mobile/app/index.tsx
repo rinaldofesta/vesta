@@ -71,6 +71,7 @@ export default function ChatScreen() {
   const modelLoaded = useChatStore((s) => s.modelLoaded);
   const error = useChatStore((s) => s.error);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const stopGenerating = useChatStore((s) => s.stopGenerating);
   const conversationTitle = useChatStore((s) => s.conversationTitle);
   const clearConversation = useChatStore((s) => s.clearConversation);
   const pendingConfirmation = useChatStore((s) => s.pendingConfirmation);
@@ -233,7 +234,13 @@ export default function ChatScreen() {
         }
       />
 
-      <ChatInput ref={chatInputRef} onSend={sendMessage} disabled={isGenerating || !modelLoaded} />
+      <ChatInput
+        ref={chatInputRef}
+        onSend={sendMessage}
+        onStop={stopGenerating}
+        isGenerating={isGenerating}
+        disabled={!modelLoaded}
+      />
     </>
   );
 

@@ -11,6 +11,9 @@ import { colors, radii, spacing } from "../lib/theme";
 
 interface Props {
   onSend: (text: string) => void;
+  onStop?: () => void;
+  isGenerating?: boolean;
+  // True when input is unavailable (no model loaded).
   disabled: boolean;
 }
 
@@ -20,7 +23,7 @@ export interface ChatInputHandle {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(
-  function ChatInput({ onSend, disabled }, ref) {
+  function ChatInput({ onSend, onStop, isGenerating = false, disabled }, ref) {
     const [text, setText] = useState("");
     const insets = useSafeAreaInsets();
     const inputRef = useRef<TextInput>(null);
@@ -32,12 +35,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(
 
     const handleSend = () => {
       const trimmed = text.trim();
-      if (!trimmed || disabled) return;
+      if (!trimmed || disabled || isGenerating) return;
       onSend(trimmed);
       setText("");
     };
 
-    const canSend = text.trim().length > 0 && !disabled;
+    const canSend = text.trim().length > 0 && !disabled && !isGenerating;
 
     return (
       <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -54,14 +57,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(
             multiline
             maxLength={1000}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!canSend}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.sendText, !canSend && styles.sendTextDisabled]}>↑</Text>
-          </TouchableOpacity>
+          {isGenerating ? (
+            <TouchableOpacity
+              style={[styles.sendBtn, styles.stopBtn]}
+              onPress={onStop}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Stop generating"
+            >
+              <View style={styles.stopSquare} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+              onPress={handleSend}
+              disabled={!canSend}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Text style={[styles.sendText, !canSend && styles.sendTextDisabled]}>↑</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -105,6 +122,15 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: colors.disabled,
+  },
+  stopBtn: {
+    backgroundColor: colors.accent,
+  },
+  stopSquare: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: "#fff",
   },
   sendText: {
     color: "#fff",
