@@ -91,7 +91,7 @@ Full architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Node.js 18+
 - Android SDK (API 34+)
 - Java 17
-- A GGUF model file — any model works! We recommend 3B–8B parameter models for phones (e.g., [Qwen3 4B](https://huggingface.co/Qwen/Qwen3-4B-GGUF), [Llama 3.2 3B](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF), [Gemma 3 4B](https://huggingface.co/bartowski/gemma-3-4b-it-GGUF))
+- A model — **no file needed up front**: download one in-app from the **Models** screen (see below), or bring your own `.gguf`.
 
 ### Setup
 
@@ -116,11 +116,26 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 npx expo run:android
 ```
 
-### Load a Model
+### Get a Model
 
-1. Open the app and tap the **Settings** gear icon
-2. Tap **Select Model** and pick a `.gguf` file from your device
-3. Go back to chat — Vesta is ready
+Vesta downloads models on-device — you choose what to download and what to keep.
+
+1. Open the app and go to the **Models** screen (tap the "no model" banner, or **Settings → Manage Models**).
+2. Pick one and tap **Download** (progress + resume + cancel). The first model you install activates automatically.
+   - Or **Add from HuggingFace** — paste any public GGUF repo and pick a quant.
+   - Or **Import** a local `.gguf` you already have.
+3. Switch the active model or **Delete** any you don't want, anytime.
+
+**Recommended (curated, RAM-aware):**
+
+| Model | Best for | Size (Q4_K_M) |
+|---|---|---|
+| **Qwen3 4B Instruct (2507)** | Most modern phones — fast (non-thinking) + strong tool calls | ~2.5 GB |
+| Qwen3 1.7B | Low-RAM phones / fastest | ~1.1 GB |
+| Qwen3 8B | Flagships with 12 GB+ RAM (Pixel 10 Pro, Galaxy S26) | ~5 GB |
+| Nomic Embed v1.5 | On-device document search (RAG) — pair with a chat model | ~90 MB |
+
+All Apache-2.0. On Adreno (Snapdragon) devices, llama.cpp's GPU backend only accepts `Q4_0`/`Q6_K` quants; on CPU-bound SoCs (e.g. Pixel's Tensor G5), `Q4_K_M` is ideal.
 
 ---
 
