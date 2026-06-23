@@ -5,13 +5,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   ScrollView,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
+import { useRouter } from "expo-router";
 import { useChatStore } from "../lib/store/chat-store";
-import { loadModel, unloadModel } from "../lib/llm/llm-engine";
 import {
   importKnowledgeFile,
   removeKnowledgeFile,
@@ -28,13 +26,12 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const language = useChatStore((s) => s.language);
   const modelLoaded = useChatStore((s) => s.modelLoaded);
   const modelPath = useChatStore((s) => s.modelPath);
   const setLanguage = useChatStore((s) => s.setLanguage);
-  const updateModelStatus = useChatStore((s) => s.updateModelStatus);
 
-  const [loadProgress, setLoadProgress] = useState<number | null>(null);
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
 
   const refreshKnowledgeFiles = useCallback(async () => {
@@ -92,57 +89,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const handlePickModel = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: false,
-      });
-
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      const name = asset.name ?? "";
-      if (!name.endsWith(".gguf")) {
-        Alert.alert("Invalid file", "Please select a .gguf model file.");
-        return;
-      }
-
-      // Android returns content:// URIs which llama.rn can't read directly.
-      // Copy to app's document directory so we get a real file path.
-      const destDir = FileSystem.documentDirectory + "models/";
-      await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
-      const destPath = destDir + name;
-
-      // Check if already copied
-      const existing = await FileSystem.getInfoAsync(destPath);
-      if (!existing.exists) {
-        setLoadProgress(0);
-        await FileSystem.copyAsync({ from: asset.uri, to: destPath });
-      }
-
-      setLoadProgress(0);
-      await loadModel(destPath, { contextSize: 4096, gpuLayers: 0 }, (progress) => {
-        setLoadProgress(progress);
-      });
-      setLoadProgress(null);
-      updateModelStatus();
-    } catch (err) {
-      setLoadProgress(null);
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Error", `Failed to load model: ${msg}`);
-    }
-  };
-
-  const handleUnload = async () => {
-    try {
-      await unloadModel();
-      updateModelStatus();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Error", `Failed to unload model: ${msg}`);
-    }
-  };
-
   const toggleLanguage = () => {
     const next: Language = language === "it" ? "en" : "it";
     setLanguage(next);
@@ -176,38 +122,16 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {loadProgress !== null && (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.round(loadProgress)}%` }]} />
-            </View>
-            <Text style={styles.progressText}>
-              Loading... {Math.round(loadProgress)}%
-            </Text>
-          </View>
-        )}
-
         <View style={styles.btnRow}>
           <TouchableOpacity
             style={[styles.btn, styles.btnPrimary]}
-            onPress={handlePickModel}
-            disabled={loadProgress !== null}
+            onPress={() => router.push("/models")}
             activeOpacity={0.7}
           >
             <Text style={styles.btnPrimaryText}>
-              {modelLoaded ? "Change Model" : "Load Model"}
+              {modelLoaded ? "Manage Models" : "Get a Model"}
             </Text>
           </TouchableOpacity>
-
-          {modelLoaded && (
-            <TouchableOpacity
-              style={[styles.btn, styles.btnOutline]}
-              onPress={handleUnload}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.btnOutlineText}>Unload</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 

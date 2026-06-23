@@ -66,6 +66,27 @@ export async function createEvent(
   }
 }
 
+export interface NativeDeviceInfo {
+  totalMemMb: number;
+  availMemMb: number;
+  lowRam: boolean;
+  model: string | null;
+  manufacturer: string | null;
+}
+
+// Returns device RAM + model, or null when the native module isn't available
+// (iOS / Expo Go). Callers must treat null as "unknown" and not hard-gate.
+export async function getDeviceInfo(): Promise<NativeDeviceInfo | null> {
+  if (!isAvailable || typeof SystemActionsModule.getDeviceInfo !== "function") {
+    return null;
+  }
+  try {
+    return (await SystemActionsModule.getDeviceInfo()) as NativeDeviceInfo;
+  } catch {
+    return null;
+  }
+}
+
 export async function setReminder(
   text: string,
   datetime: string,

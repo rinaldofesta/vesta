@@ -1,6 +1,9 @@
 package com.cosmico.vesta
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.AlarmClock
 import android.provider.CalendarContract
 import com.facebook.react.bridge.*
@@ -13,6 +16,28 @@ class SystemActionsModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     override fun getName(): String = "SystemActionsModule"
+
+    // Device capabilities — used by the model manager to recommend models that
+    // actually fit this phone's RAM (e.g. a 16 GB Pixel runs every catalog model;
+    // a 4 GB device should be steered away from 8B).
+    @ReactMethod
+    fun getDeviceInfo(promise: Promise) {
+        try {
+            val am = reactApplicationContext
+                .getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val mem = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mem)
+            val map = Arguments.createMap()
+            map.putDouble("totalMemMb", mem.totalMem / (1024.0 * 1024.0))
+            map.putDouble("availMemMb", mem.availMem / (1024.0 * 1024.0))
+            map.putBoolean("lowRam", am.isLowRamDevice)
+            map.putString("model", Build.MODEL)
+            map.putString("manufacturer", Build.MANUFACTURER)
+            promise.resolve(map)
+        } catch (e: Exception) {
+            promise.reject("DEVICE_INFO_ERROR", e.message, e)
+        }
+    }
 
     private fun parseToMillis(dateStr: String): Long {
         return try {

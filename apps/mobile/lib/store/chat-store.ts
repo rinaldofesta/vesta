@@ -17,8 +17,15 @@ import {
   touchConversation,
   deleteConversation,
 } from "../storage/database";
-import { isLoaded, getModelInfo } from "../llm/llm-engine";
+import { loadModel, isLoaded, getModelInfo } from "../llm/llm-engine";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
+import { startVestaService } from "../native/vesta-service";
+import * as FileSystem from "expo-file-system/legacy";
+import {
+  ensureLegacyMigration,
+  getActiveModel,
+  setModelState,
+} from "../models/model-registry";
 
 interface ChatState {
   messages: Message[];
@@ -72,6 +79,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // First launch — lazy: just set ID, don't persist until first message
       conversationId = uuid();
       set({ conversationId, messages: [] });
+    }
+
+    // Start foreground service to keep process alive
+    startVestaService().catch(() => {});
+
+    // Auto-load the active model from the registry (migrating any legacy
+    // model_path on first run). Don't erase the selection on a transient load
+    // failure — only mark it errored when the file is genuinely gone, so a
+    // low-memory boot doesn't force re-downloading a multi-GB model.
+    try {
+      await ensureLegacyMigration();
+      const active = await getActiveModel();
+      if (active && !isLoaded()) {
+        const fileInfo = await FileSystem.getInfoAsync(active.filePath);
+        if (fileInfo.exists) {
+          await loadModel(active.filePath, {
+            contextSize: active.contextSize,
+            gpuLayers: 0,
+            chatTemplate: active.chatTemplate ?? undefined,
+          });
+        } else {
+          await setModelState(active.id, "error");
+        }
+      }
+    } catch (err) {
+      console.warn("[chat-store] model auto-load failed:", err);
     }
 
     const info = getModelInfo();

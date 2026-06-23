@@ -33,6 +33,58 @@ export interface KnowledgeFile {
 let db: SQLite.SQLiteDatabase | null = null;
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
+// --- Schema migrations ---
+// The baseline tables above use CREATE TABLE IF NOT EXISTS (safe for fresh and
+// existing installs). Any change to an EXISTING table (e.g. ADD COLUMN) must go
+// through a numbered migration here so upgraded installs converge deterministically
+// instead of silently missing columns. Bump SCHEMA_VERSION and append to MIGRATIONS.
+const MIGRATIONS: { version: number; sql: string }[] = [
+  {
+    version: 1,
+    sql: `
+      CREATE TABLE IF NOT EXISTS models (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        hf_repo TEXT,
+        hf_file TEXT,
+        file_path TEXT NOT NULL,
+        quant TEXT,
+        size_bytes INTEGER DEFAULT 0,
+        min_ram_mb INTEGER,
+        chat_template TEXT,
+        context_size INTEGER DEFAULT 4096,
+        role TEXT NOT NULL DEFAULT 'primary' CHECK(role IN ('primary','router','embedding')),
+        state TEXT NOT NULL DEFAULT 'ready'
+          CHECK(state IN ('idle','checking','downloading','paused','verifying','ready','error','canceled')),
+        resume_token TEXT,
+        sha256 TEXT,
+        is_active INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_models_active ON models(is_active DESC);
+    `,
+  },
+];
+
+async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
+  const row = await database.getFirstAsync<{ user_version: number }>(
+    "PRAGMA user_version",
+  );
+  let current = row?.user_version ?? 0;
+  for (const m of MIGRATIONS) {
+    if (m.version <= current) continue;
+    // Commit schema + version atomically so a crash can't leave a half-applied
+    // migration that re-runs on next boot (safe only while migrations are
+    // idempotent; future non-idempotent ones depend on this). PRAGMA cannot be
+    // parameterized; m.version is a trusted integer literal.
+    await database.withTransactionAsync(async () => {
+      await database.execAsync(m.sql);
+      await database.execAsync(`PRAGMA user_version = ${m.version}`);
+    });
+    current = m.version;
+  }
+}
+
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
   if (dbPromise) return dbPromise;
@@ -95,6 +147,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       INSERT OR IGNORE INTO config (key, value) VALUES ('language', 'it');
       INSERT OR IGNORE INTO config (key, value) VALUES ('confirm_destructive_actions', 'true');
     `);
+    await runMigrations(database);
     db = database;
     return database;
   })().catch((err) => {

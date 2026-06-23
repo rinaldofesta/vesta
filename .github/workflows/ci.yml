@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
+  checks:
+    # Keep the name "TypeScript Check" — it is the required status check in
+    # main's branch protection. The job now also runs lint + tests.
     name: TypeScript Check
     runs-on: ubuntu-latest
     defaults:
@@ -28,3 +30,43 @@ jobs:
       - run: npm run typecheck
 
       - run: npm run lint
+
+      - run: npm test
+
+  android-build:
+    name: Android Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm install --legacy-peer-deps
+
+      # Runs the with-system-actions config plugin (copies Kotlin, merges the
+      # manifest) so plugin/manifest regressions fail CI, not the device.
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --no-install
+
+      # Compiles the native/Kotlin layer (SystemActionsModule, etc.). llama.rn
+      # ships prebuilt jniLibs, so no NDK source build is required.
+      - name: Assemble debug APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace

@@ -3,6 +3,7 @@
 
 import {
   initLlama,
+  loadLlamaModelInfo,
   LlamaContext,
   type RNLlamaOAICompatibleMessage,
   type NativeCompletionResult,
@@ -28,14 +29,18 @@ export interface CompletionResult {
   stoppedByLimit: boolean;
 }
 
-const DEFAULT_OPTIONS: Required<LlmOptions> = {
+const DEFAULT_OPTIONS: Required<
+  Pick<LlmOptions, "contextSize" | "gpuLayers" | "threads" | "useMlock">
+> = {
   contextSize: 4096,
   gpuLayers: 0,
   threads: 4,
   useMlock: false,
 };
 
-const DEFAULT_GENERATE: Required<GenerateOptions> = {
+const DEFAULT_GENERATE: Required<
+  Pick<GenerateOptions, "maxTokens" | "temperature" | "topP" | "stopSequences">
+> = {
   maxTokens: 4096,
   temperature: 0.7,
   topP: 0.95,
@@ -90,11 +95,34 @@ export function loadModel(
         n_gpu_layers: opts.gpuLayers,
         n_threads: opts.threads,
         use_mlock: opts.useMlock,
+        // Roll the oldest tokens out of the KV cache instead of hard-failing
+        // when a long chat exceeds n_ctx (LLM-6).
+        ctx_shift: true,
+        // Only override the embedded template when one is explicitly provided.
+        ...(options?.chatTemplate ? { chat_template: options.chatTemplate } : {}),
       },
       onProgress,
     );
     currentModelPath = modelPath;
   });
+}
+
+// Cheap pre-load validation: reads GGUF header/metadata without a full context
+// init. Returns ok:false for renamed/truncated/non-GGUF files so callers can
+// reject before committing disk + load time.
+export async function validateGguf(
+  modelPath: string,
+): Promise<{ ok: boolean; info?: Record<string, unknown>; error?: string }> {
+  try {
+    const info = (await loadLlamaModelInfo(modelPath)) as Record<string, unknown>;
+    if (!info || Object.keys(info).length === 0) {
+      return { ok: false, error: "Not a valid GGUF file." };
+    }
+    return { ok: true, info };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
 }
 
 export function unloadModel(): Promise<void> {
@@ -129,6 +157,8 @@ export function generate(
         temperature: opts.temperature,
         top_p: opts.topP,
         stop: opts.stopSequences.length > 0 ? opts.stopSequences : undefined,
+        // Pass through only when explicitly set, so the model's default stands otherwise.
+        ...(options?.enableThinking === false ? { enable_thinking: false } : {}),
       },
       onToken
         ? (data: TokenData) => {
