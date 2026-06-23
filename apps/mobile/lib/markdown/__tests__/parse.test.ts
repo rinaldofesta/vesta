@@ -36,6 +36,27 @@ describe("parseInline", () => {
       },
     ]);
   });
+  it("does NOT italicize intraword underscores (snake_case)", () => {
+    expect(parseInline("call snake_case_name here")).toEqual([
+      { t: "text", v: "call snake" },
+      { t: "text", v: "_case_" },
+      { t: "text", v: "name here" },
+    ]);
+  });
+  it("does NOT italicize space-padded asterisks (math)", () => {
+    const nodes = parseInline("compute 5 * 3 * 2 now");
+    expect(nodes.every((n) => n.t === "text")).toBe(true);
+    expect(nodes.map((n) => (n.t === "text" ? n.v : "")).join("")).toBe(
+      "compute 5 * 3 * 2 now",
+    );
+  });
+  it("still italicizes a real standalone _word_", () => {
+    expect(parseInline("this is _important_ ok")).toEqual([
+      { t: "text", v: "this is " },
+      { t: "italic", children: [{ t: "text", v: "important" }] },
+      { t: "text", v: " ok" },
+    ]);
+  });
 });
 
 describe("parseMarkdown", () => {

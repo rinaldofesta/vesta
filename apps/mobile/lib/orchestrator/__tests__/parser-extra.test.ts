@@ -38,4 +38,10 @@ describe("capInjectedKnowledge", () => {
     // block is short enough to be returned as-is
     expect(capped).toBe(block);
   });
+  it("never exceeds max even when max is smaller than the notice", () => {
+    const big = "x".repeat(500);
+    for (const max of [0, 1, 10, 30, 52]) {
+      expect(capInjectedKnowledge(big, max).length).toBeLessThanOrEqual(max);
+    }
+  });
 });

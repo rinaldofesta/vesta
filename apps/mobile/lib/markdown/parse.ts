@@ -38,14 +38,37 @@ function splitCode(s: string): Inline[] {
   return out;
 }
 
+// Emphasis only applies when a marker isn't space-padded (CommonMark: `5 * 3 *`
+// is not italic) and, for underscores, isn't intraword (`snake_case` is literal).
+function emphasisValid(
+  content: string,
+  before: string,
+  after: string,
+  underscore: boolean,
+): boolean {
+  if (/^\s|\s$/.test(content)) return false;
+  if (underscore && (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after))) {
+    return false;
+  }
+  return true;
+}
+
 function splitBold(s: string): Inline[] {
   const out: Inline[] = [];
   const re = /\*\*([^*]+)\*\*|__([^_]+)__/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {
+    const underscore = m[2] !== undefined;
+    const content = m[1] ?? m[2];
+    const before = m.index > 0 ? s[m.index - 1] : "";
+    const after = m.index + m[0].length < s.length ? s[m.index + m[0].length] : "";
     if (m.index > last) out.push(...splitItalic(s.slice(last, m.index)));
-    out.push({ t: "bold", children: splitItalic(m[1] ?? m[2]) });
+    if (emphasisValid(content, before, after, underscore)) {
+      out.push({ t: "bold", children: splitItalic(content) });
+    } else {
+      out.push(...splitItalic(m[0])); // not emphasis — keep markers literal
+    }
     last = m.index + m[0].length;
   }
   if (last < s.length) out.push(...splitItalic(s.slice(last)));
@@ -58,8 +81,16 @@ function splitItalic(s: string): Inline[] {
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {
+    const underscore = m[2] !== undefined;
+    const content = m[1] ?? m[2];
+    const before = m.index > 0 ? s[m.index - 1] : "";
+    const after = m.index + m[0].length < s.length ? s[m.index + m[0].length] : "";
     if (m.index > last) out.push({ t: "text", v: s.slice(last, m.index) });
-    out.push({ t: "italic", children: [{ t: "text", v: m[1] ?? m[2] }] });
+    if (emphasisValid(content, before, after, underscore)) {
+      out.push({ t: "italic", children: [{ t: "text", v: content }] });
+    } else {
+      out.push({ t: "text", v: m[0] }); // not emphasis — keep markers literal
+    }
     last = m.index + m[0].length;
   }
   if (last < s.length) out.push({ t: "text", v: s.slice(last) });

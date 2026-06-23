@@ -13,7 +13,10 @@ export function capInjectedKnowledge(
 ): string {
   if (block.length <= max) return block;
   const notice = "\n\n[...knowledge truncated to fit the context window]";
-  const budget = Math.max(0, max - notice.length);
+  // If there's no room for content + notice, hard-truncate to max so the result
+  // never exceeds the budget (the notice itself can be longer than a tiny max).
+  if (max <= notice.length) return block.slice(0, max);
+  const budget = max - notice.length;
   let cut = block.lastIndexOf("\n", budget);
   if (cut < budget * 0.5) cut = budget; // no nearby newline — hard cut
   return block.slice(0, cut).trimEnd() + notice;
