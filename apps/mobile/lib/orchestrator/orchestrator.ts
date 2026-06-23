@@ -5,7 +5,7 @@
 import { generate, isLoaded } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
 import { buildSystemPrompt } from "./prompt-builder";
-import { parseResponse, stripThinkTags } from "./response-parser";
+import { parseResponse, stripThinkTags, looksLikeToolAttempt } from "./response-parser";
 import type {
   Language,
   OrchestratorResponse,
@@ -134,6 +134,17 @@ export async function processMessage(
           result: toolResult,
         };
       }
+    } else if (looksLikeToolAttempt(raw)) {
+      // The model tried to emit a tool call but it didn't parse — almost always
+      // truncated by the token limit. Show a clean retry hint instead of dumping
+      // raw partial JSON like `{"tool":"set_alarm","parameters":{...` (ORCH-8).
+      response = {
+        type: "text",
+        content:
+          lang === "it"
+            ? "Non sono riuscito a completare quell'azione (risposta troncata). Riprova, magari riformulando."
+            : "I couldn't complete that action (the response was cut off). Please try again, perhaps rephrasing.",
+      };
     } else {
       // Plain text response — keep think tags for styled UI rendering
       response = { type: "text", content: raw };

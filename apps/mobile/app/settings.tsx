@@ -15,6 +15,7 @@ import {
   importKnowledgeFile,
   removeKnowledgeFile,
   listKnowledgeFiles,
+  KnowledgeTooLargeError,
 } from "../lib/orchestrator/knowledge-manager";
 import { getConfig, setConfig } from "../lib/storage/database";
 import type { KnowledgeFile } from "../lib/storage/database";
@@ -81,7 +82,11 @@ export default function SettingsScreen() {
       await refreshKnowledgeFiles();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Error", `Failed to import file: ${msg}`);
+      if (err instanceof KnowledgeTooLargeError) {
+        Alert.alert("File too large", msg);
+      } else {
+        Alert.alert("Error", `Failed to import file: ${msg}`);
+      }
     }
   };
 

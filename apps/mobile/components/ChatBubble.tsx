@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import type { Message } from "../lib/orchestrator/types";
+import { Markdown } from "./Markdown";
 import { colors, radii, typography } from "../lib/theme";
 
 interface Props {
@@ -80,13 +81,13 @@ export const ChatBubble = React.memo(function ChatBubble({
           </View>
         )}
 
-        {/* Main content */}
+        {/* Main content — markdown for the assistant, plain text for the user */}
         {content ? (
-          <Text
-            style={[styles.text, isUser ? styles.textUser : styles.textAssistant]}
-          >
-            {content}
-          </Text>
+          isUser ? (
+            <Text style={[styles.text, styles.textUser]}>{content}</Text>
+          ) : (
+            <Markdown content={content} color={colors.assistantText} />
+          )
         ) : null}
 
         {/* Tool badge */}

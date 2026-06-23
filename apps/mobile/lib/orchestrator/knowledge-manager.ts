@@ -9,8 +9,29 @@ import {
   deleteKnowledgeFile as dbDeleteKnowledgeFile,
 } from "../storage/database";
 import type { KnowledgeFile } from "../storage/database";
+import { capInjectedKnowledge } from "./knowledge-format";
+
+export {
+  capInjectedKnowledge,
+  MAX_KNOWLEDGE_INJECT_CHARS,
+} from "./knowledge-format";
 
 const KNOWLEDGE_DIR = FileSystem.documentDirectory + "knowledge/";
+
+// Reject oversized files at import (a huge .md can't usefully fit a 4096-token
+// context anyway). The total injected text is hard-capped separately at prompt
+// build time (capInjectedKnowledge), so the window can never overflow.
+export const MAX_KNOWLEDGE_FILE_BYTES = 64 * 1024;
+
+export class KnowledgeTooLargeError extends Error {
+  constructor() {
+    super(
+      `File is too large (max ${Math.round(MAX_KNOWLEDGE_FILE_BYTES / 1024)} KB). ` +
+        `Knowledge files are injected into every prompt, so keep them short.`,
+    );
+    this.name = "KnowledgeTooLargeError";
+  }
+}
 
 async function ensureKnowledgeDir(): Promise<void> {
   const info = await FileSystem.getInfoAsync(KNOWLEDGE_DIR);
@@ -36,6 +57,12 @@ export async function importKnowledgeFile(
 
   const info = await FileSystem.getInfoAsync(destPath);
   const fileSize = info.exists && !info.isDirectory ? (info.size ?? 0) : 0;
+
+  // Reject oversized files (delete the copy first so we don't leave an orphan).
+  if (fileSize > MAX_KNOWLEDGE_FILE_BYTES) {
+    await FileSystem.deleteAsync(destPath, { idempotent: true });
+    throw new KnowledgeTooLargeError();
+  }
 
   await saveKnowledgeFile({ id, filename, fileSize });
 
@@ -82,7 +109,7 @@ export async function getKnowledgeForPrompt(): Promise<string | null> {
   }
 
   if (sections.length === 0) return null;
-  return sections.join("\n\n");
+  return capInjectedKnowledge(sections.join("\n\n"));
 }
 
 /**

@@ -51,6 +51,17 @@ function extractBalancedJson(text: string): string | null {
   return null;
 }
 
+// True when the (think-stripped) text is clearly an attempted-but-unparseable
+// tool call — e.g. a JSON object that was truncated by the token limit. Used to
+// avoid dumping raw partial JSON like `{"tool":"set_alarm","parameters":{...`
+// into the chat as if it were a normal reply.
+export function looksLikeToolAttempt(raw: string): boolean {
+  const cleaned = stripThinkTags(raw).trimStart();
+  // Strip a leading ```json fence if present.
+  const body = cleaned.replace(/^```(?:json)?\s*/i, "");
+  return body.startsWith("{") && /"tool"\s*:/.test(body);
+}
+
 export function parseResponse(raw: string): ParsedToolCall | null {
   const cleaned = stripThinkTags(raw);
 
