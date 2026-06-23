@@ -73,11 +73,14 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   let current = row?.user_version ?? 0;
   for (const m of MIGRATIONS) {
     if (m.version <= current) continue;
+    // Commit schema + version atomically so a crash can't leave a half-applied
+    // migration that re-runs on next boot (safe only while migrations are
+    // idempotent; future non-idempotent ones depend on this). PRAGMA cannot be
+    // parameterized; m.version is a trusted integer literal.
     await database.withTransactionAsync(async () => {
       await database.execAsync(m.sql);
+      await database.execAsync(`PRAGMA user_version = ${m.version}`);
     });
-    // PRAGMA cannot be parameterized; m.version is a trusted integer literal.
-    await database.execAsync(`PRAGMA user_version = ${m.version}`);
     current = m.version;
   }
 }

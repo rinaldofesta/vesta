@@ -57,7 +57,9 @@ export interface DownloadParams {
 
 export interface DownloadOutcome {
   ok: boolean;
-  canceled?: boolean;
+  canceled?: boolean; // user canceled — partial discarded, no row should survive
+  paused?: boolean; // paused — partial kept, resume later via resumeToken
+  resumeToken?: string;
   filePath?: string;
   sizeBytes?: number;
   error?: string;
@@ -158,18 +160,20 @@ export async function downloadModel(
 
     // undefined => the task was paused or canceled.
     if (!result) {
+      // Cancel takes priority: drop the partial entirely.
       if (entry.canceled) {
         await safeDelete(tempPath);
         return { ok: false, canceled: true };
       }
-      // Paused: persist the resume token so we can continue later.
+      // Paused: keep the partial and persist the resume token to continue later.
+      let resumeToken: string | undefined;
       try {
-        const token = task.savable().resumeData;
-        if (token) onResumeToken?.(token);
+        resumeToken = task.savable().resumeData;
+        if (resumeToken) onResumeToken?.(resumeToken);
       } catch {
         /* best-effort */
       }
-      return { ok: false, canceled: true };
+      return { ok: false, paused: true, resumeToken };
     }
 
     // Verify the downloaded file before committing it as the model.
@@ -190,6 +194,14 @@ export async function downloadModel(
         ok: false,
         error: `Download incomplete (${actualSize} of ${expectedBytes} bytes). Try again.`,
       };
+    }
+
+    // A cancel may have landed while the download was finishing (the awaits
+    // above are yield points). Do NOT commit, or we'd recreate a multi-GB file
+    // with no DB row pointing at it (orphan). Drop the partial and bail.
+    if (entry.canceled) {
+      await safeDelete(tempPath);
+      return { ok: false, canceled: true };
     }
 
     // Commit: replace any existing final file with the verified temp file.

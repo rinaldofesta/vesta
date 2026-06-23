@@ -28,6 +28,10 @@ import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
 import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
 import { useChatStore } from "./chat-store";
 
+// Serializes the "first model auto-activates" decision so two near-simultaneous
+// downloads can't both fire a (multi-GB) load (H1 TOCTOU).
+let autoActivateInFlight = false;
+
 // Pure: choose which file in a repo to download. Exact filename wins, then a
 // filename containing the desired quant, then the first GGUF.
 export function pickFile(
@@ -207,22 +211,36 @@ export const useModelStore = create<ModelState>((set, get) => ({
         chatTemplate: model.chatTemplate ?? undefined,
       });
       await setActiveModel(id);
-      useChatStore.getState().updateModelStatus();
       await get().refresh();
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      // Always reflect what's actually loaded in native, even if the registry
+      // write failed after a successful load (H2).
+      useChatStore.getState().updateModelStatus();
     }
   },
 
   remove: async (id: string) => {
     const model = await getModelById(id);
     if (!model) return;
-    if (model.isActive) {
+    const wasActive = model.isActive;
+    // Unload before deleting the file so llama isn't holding the mmap.
+    if (wasActive) {
       await unloadModel().catch(() => {});
       useChatStore.getState().updateModelStatus();
     }
     await deleteModelFile(model.filePath);
     await removeModel(id);
+
+    // Removing the active model: promote another ready model so the app isn't
+    // left with no model loaded while others are installed (M1).
+    if (wasActive) {
+      const replacement = (await listInstalled()).find(
+        (m) => m.id !== id && m.state === "ready",
+      );
+      if (replacement) await get().activate(replacement.id);
+    }
     await get().refresh();
   },
 
@@ -308,11 +326,30 @@ async function runDownload(
     },
   });
 
-  // If the row was removed mid-flight (user cancel), stop here.
+  // If the row was removed mid-flight (user cancel), stop — and sweep any file
+  // the download may have committed in the cancel race so it can't orphan (C1).
   const stillExists = await getModelById(id);
-  if (!stillExists) return;
+  if (!stillExists) {
+    await deleteModelFile(modelPathFor(fileName));
+    return;
+  }
 
+  // Canceled: drop the row + partial entirely (cancel() usually already did,
+  // but cover the race where downloadModel returned canceled first).
   if (outcome.canceled) {
+    await deleteModelFile(stillExists.filePath);
+    await removeModel(id);
+    set((s) => {
+      const progress = { ...s.progress };
+      delete progress[id];
+      return { progress };
+    });
+    await get().refresh();
+    return;
+  }
+
+  // Paused: keep the row + partial so the user can resume later.
+  if (outcome.paused) {
     await setModelState(id, "paused");
     await get().refresh();
     return;
@@ -323,7 +360,15 @@ async function runDownload(
     set((s) => ({
       progress: {
         ...s.progress,
-        [id]: { ...s.progress[id], status: "error", error: outcome.error },
+        [id]: {
+          modelId: id,
+          status: "error",
+          bytesWritten: 0,
+          bytesTotal: args.file.sizeBytes,
+          bytesPerSec: 0,
+          etaSeconds: null,
+          error: outcome.error,
+        },
       },
     }));
     await get().refresh();
@@ -352,7 +397,15 @@ async function runDownload(
   });
   await get().refresh();
 
-  // Auto-activate the first model the user installs.
-  const active = await getActiveModel();
-  if (!active) await get().activate(id);
+  // Auto-activate the first model the user installs. Guarded so concurrent
+  // downloads don't both pass the no-active-model check and double-load (H1).
+  if (!autoActivateInFlight) {
+    autoActivateInFlight = true;
+    try {
+      const active = await getActiveModel();
+      if (!active) await get().activate(id);
+    } finally {
+      autoActivateInFlight = false;
+    }
+  }
 }
