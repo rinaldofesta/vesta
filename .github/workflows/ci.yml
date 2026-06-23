@@ -8,7 +8,9 @@ on:
 
 jobs:
   checks:
-    name: Typecheck, Lint & Test
+    # Keep the name "TypeScript Check" — it is the required status check in
+    # main's branch protection. The job now also runs lint + tests.
+    name: TypeScript Check
     runs-on: ubuntu-latest
     defaults:
       run:
