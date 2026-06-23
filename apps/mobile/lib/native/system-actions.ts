@@ -87,17 +87,7 @@ export async function getDeviceInfo(): Promise<NativeDeviceInfo | null> {
   }
 }
 
-export async function setReminder(
-  text: string,
-  datetime: string,
-): Promise<ToolCallResult> {
-  ensureAvailable();
-
-  try {
-    await SystemActionsModule.setReminder(text, datetime);
-    return { success: true, message: `Reminder set: "${text}"` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { success: false, message: "Failed to set reminder", error: msg };
-  }
-}
+// NOTE: reminders are now scheduled as real local notifications via
+// lib/native/reminders.ts (offline, reliably alerting). The old native
+// calendar-insert path was removed because ACTION_INSERT did not honor the
+// reminder alarm.

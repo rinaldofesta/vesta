@@ -3,16 +3,17 @@
 // which achieved 97.8% accuracy in Fase 0.
 
 import { formatToolsForPrompt } from "../tools/tool-registry";
+import { localDateStr, addDays } from "./date-utils";
 import type { Language } from "./types";
 
+// LOCAL today/tomorrow — using toISOString() (UTC) made these off by a day near
+// midnight in non-UTC zones, which is wrong for an alarm/calendar assistant.
 function getTomorrow(now: Date): string {
-  const d = new Date(now);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
+  return localDateStr(addDays(now, 1));
 }
 
 function getToday(now: Date): string {
-  return now.toISOString().split("T")[0];
+  return localDateStr(now);
 }
 
 function getDayOfWeek(now: Date, lang: Language): string {
