@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
+  Switch,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
@@ -15,6 +16,7 @@ import {
   removeKnowledgeFile,
   listKnowledgeFiles,
 } from "../lib/orchestrator/knowledge-manager";
+import { getConfig, setConfig } from "../lib/storage/database";
 import type { KnowledgeFile } from "../lib/storage/database";
 import { colors, spacing, radii, typography } from "../lib/theme";
 import type { Language } from "../lib/orchestrator/types";
@@ -33,6 +35,18 @@ export default function SettingsScreen() {
   const setLanguage = useChatStore((s) => s.setLanguage);
 
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
+  const [confirmActions, setConfirmActions] = useState(true);
+
+  useEffect(() => {
+    getConfig("confirm_destructive_actions")
+      .then((v) => setConfirmActions(v !== "false"))
+      .catch(() => {});
+  }, []);
+
+  const toggleConfirmActions = (value: boolean) => {
+    setConfirmActions(value);
+    setConfig("confirm_destructive_actions", value ? "true" : "false").catch(() => {});
+  };
 
   const refreshKnowledgeFiles = useCallback(async () => {
     try {
@@ -149,6 +163,24 @@ export default function SettingsScreen() {
             <Text style={styles.langArrowText}>⇄</Text>
           </View>
         </TouchableOpacity>
+      </View>
+
+      {/* Privacy & Safety section */}
+      <Text style={styles.sectionTitle}>Privacy & Safety</Text>
+      <View style={styles.card}>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleInfo}>
+            <Text style={styles.toggleTitle}>Confirm actions</Text>
+            <Text style={styles.toggleHint}>
+              Ask before Vesta sets alarms, creates events, or reminders.
+            </Text>
+          </View>
+          <Switch
+            value={confirmActions}
+            onValueChange={toggleConfirmActions}
+            trackColor={{ false: colors.disabled, true: colors.accent }}
+          />
+        </View>
       </View>
 
       {/* Knowledge Files section */}
@@ -268,6 +300,27 @@ const styles = StyleSheet.create({
   },
   statusNotLoadedText: {
     color: colors.accent,
+  },
+  // Toggle
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  toggleHint: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginTop: 3,
+    lineHeight: 18,
   },
   // File
   fileRow: {

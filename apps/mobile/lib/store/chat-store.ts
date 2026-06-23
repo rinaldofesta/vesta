@@ -4,8 +4,13 @@
 
 import { create } from "zustand";
 import { v4 as uuid } from "uuid";
-import type { Message, Language, OrchestratorResponse } from "../orchestrator/types";
-import { processMessage } from "../orchestrator/orchestrator";
+import type {
+  Message,
+  Language,
+  OrchestratorResponse,
+  ToolCallResult,
+} from "../orchestrator/types";
+import { processMessage, executeToolCall } from "../orchestrator/orchestrator";
 import {
   saveMessage,
   getMessages,
@@ -16,6 +21,7 @@ import {
   updateConversationTitle,
   touchConversation,
   deleteConversation,
+  updateMessageToolResult,
 } from "../storage/database";
 import { loadModel, isLoaded, getModelInfo } from "../llm/llm-engine";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
@@ -27,6 +33,14 @@ import {
   setModelState,
 } from "../models/model-registry";
 
+// A destructive tool call parsed but not yet executed — awaiting the user's
+// explicit confirmation. Held in memory only: a restart never auto-executes it.
+interface PendingConfirmation {
+  messageId: string;
+  tool: string;
+  parameters: Record<string, unknown>;
+}
+
 interface ChatState {
   messages: Message[];
   conversationId: string;
@@ -37,10 +51,12 @@ interface ChatState {
   modelLoaded: boolean;
   modelPath: string | null;
   error: string | null;
+  pendingConfirmation: PendingConfirmation | null;
 
   // Actions
   init: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
+  resolveConfirmation: (confirmed: boolean) => Promise<void>;
   loadConversation: (id: string, title: string | null) => Promise<void>;
   clearConversation: () => void;
   deleteAndSwitch: (id: string) => Promise<void>;
@@ -58,6 +74,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelLoaded: false,
   modelPath: null,
   error: null,
+  pendingConfirmation: null,
 
   init: async () => {
     const lang = await getConfig("language");
@@ -119,6 +136,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendMessage: async (text: string) => {
     if (get().isGenerating) return; // prevent concurrent sends
+
+    // Moving on with a new message implicitly declines any unconfirmed action.
+    if (get().pendingConfirmation) {
+      await get().resolveConfirmation(false);
+    }
 
     const { conversationId, language, messages: currentMsgs } = get();
 
@@ -187,6 +209,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
         break;
 
+      case "pending_tool_call": {
+        // Destructive action proposed — show it with Confirm/Cancel and DO NOT
+        // execute until the user approves (toolResult left undefined = pending).
+        const pendingMsg: Message = {
+          id: uuid(),
+          conversationId,
+          role: "assistant",
+          content: response.message,
+          toolCall: JSON.stringify({
+            tool: response.tool,
+            parameters: response.parameters,
+          }),
+          createdAt: Date.now(),
+        };
+        set((s) => ({
+          messages: [...s.messages, pendingMsg],
+          isGenerating: false,
+          streamingText: "",
+          pendingConfirmation: {
+            messageId: pendingMsg.id,
+            tool: response.tool,
+            parameters: response.parameters,
+          },
+        }));
+        try {
+          await saveMessage(pendingMsg);
+          await touchConversation(conversationId);
+        } catch (err) {
+          console.error("Failed to persist pending message:", err);
+        }
+        return;
+      }
+
       case "text":
         assistantMsg = {
           id: uuid(),
@@ -216,6 +271,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  resolveConfirmation: async (confirmed: boolean) => {
+    const pending = get().pendingConfirmation;
+    if (!pending) return;
+
+    // Clear first so a second tap / concurrent send can't double-dispatch.
+    set({ pendingConfirmation: null });
+
+    let result: ToolCallResult;
+    if (confirmed) {
+      try {
+        result = await executeToolCall(pending.tool, pending.parameters);
+      } catch (err) {
+        result = {
+          success: false,
+          message: "Action failed",
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    } else {
+      result = {
+        success: false,
+        message: get().language === "it" ? "Annullato" : "Canceled",
+        error: "declined",
+      };
+    }
+
+    const toolResultStr = JSON.stringify(result);
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === pending.messageId ? { ...m, toolResult: toolResultStr } : m,
+      ),
+    }));
+    try {
+      await updateMessageToolResult(pending.messageId, toolResultStr);
+    } catch (err) {
+      console.error("Failed to persist tool result:", err);
+    }
+  },
+
   loadConversation: async (id: string, title: string | null) => {
     const messages = await getMessages(id);
     set({
@@ -224,6 +318,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages,
       streamingText: "",
       error: null,
+      pendingConfirmation: null,
     });
   },
 
@@ -235,6 +330,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationTitle: null,
       streamingText: "",
       error: null,
+      pendingConfirmation: null,
     });
   },
 
@@ -252,6 +348,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages,
           streamingText: "",
           error: null,
+          pendingConfirmation: null,
         });
       } else {
         // No conversations left — start fresh (lazy, not persisted)
@@ -261,6 +358,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           conversationTitle: null,
           streamingText: "",
           error: null,
+          pendingConfirmation: null,
         });
       }
     }

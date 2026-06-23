@@ -73,6 +73,8 @@ export default function ChatScreen() {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const conversationTitle = useChatStore((s) => s.conversationTitle);
   const clearConversation = useChatStore((s) => s.clearConversation);
+  const pendingConfirmation = useChatStore((s) => s.pendingConfirmation);
+  const resolveConfirmation = useChatStore((s) => s.resolveConfirmation);
 
   // Dynamic header with history + new chat buttons
   useLayoutEffect(() => {
@@ -119,9 +121,15 @@ export default function ChatScreen() {
         const voiceText = parsed.searchParams.get("voice_text");
         const focus = parsed.searchParams.get("focus");
 
-        if (voiceText && modelLoaded) {
-          // Auto-send voice transcription
-          setTimeout(() => sendMessage(voiceText), 300);
+        if (voiceText) {
+          // Security: never auto-send from a deep link (the vesta:// scheme is
+          // BROWSABLE, so any app/web page could fire it). Pre-fill the input
+          // and let the user review and send explicitly. Cap length too.
+          const prefill = voiceText.slice(0, 1000);
+          setTimeout(() => {
+            chatInputRef.current?.setText(prefill);
+            chatInputRef.current?.focus();
+          }, 300);
         } else if (focus) {
           // Focus the input
           setTimeout(() => chatInputRef.current?.focus(), 300);
@@ -191,8 +199,18 @@ export default function ChatScreen() {
       <FlatList
         ref={flatListRef}
         data={messages}
+        extraData={pendingConfirmation?.messageId}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <ChatBubble message={item} />}
+        renderItem={({ item }) => {
+          const awaiting = pendingConfirmation?.messageId === item.id;
+          return (
+            <ChatBubble
+              message={item}
+              awaitingConfirmation={awaiting}
+              onResolve={awaiting ? resolveConfirmation : undefined}
+            />
+          );
+        }}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"

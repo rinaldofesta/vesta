@@ -5,6 +5,8 @@ import { colors, radii, typography } from "../lib/theme";
 
 interface Props {
   message: Message;
+  awaitingConfirmation?: boolean;
+  onResolve?: (confirmed: boolean) => void;
 }
 
 /** Split text into thinking and visible content parts. */
@@ -28,7 +30,11 @@ function parseThinking(text: string): {
   return { thinking: null, content: text };
 }
 
-export const ChatBubble = React.memo(function ChatBubble({ message }: Props) {
+export const ChatBubble = React.memo(function ChatBubble({
+  message,
+  awaitingConfirmation = false,
+  onResolve,
+}: Props) {
   const isUser = message.role === "user";
   const [thinkExpanded, setThinkExpanded] = useState(false);
 
@@ -98,6 +104,30 @@ export const ChatBubble = React.memo(function ChatBubble({ message }: Props) {
               {toolCall.tool?.replace(/_/g, " ")}
               {toolResult?.success ? "  ✓" : toolResult ? "  ✗" : ""}
             </Text>
+          </View>
+        )}
+
+        {/* Confirmation prompt for a destructive action awaiting approval */}
+        {awaitingConfirmation && (
+          <View style={styles.confirmRow}>
+            <TouchableOpacity
+              style={[styles.confirmBtn, styles.confirmYes]}
+              onPress={() => onResolve?.(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm action"
+            >
+              <Text style={styles.confirmYesText}>Confirm</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmBtn, styles.confirmNo]}
+              onPress={() => onResolve?.(false)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel action"
+            >
+              <Text style={styles.confirmNoText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -209,5 +239,34 @@ const styles = StyleSheet.create({
   },
   toolPendingText: {
     color: colors.accent,
+  },
+  // Confirmation buttons
+  confirmRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  confirmBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radii.sm,
+  },
+  confirmYes: {
+    backgroundColor: colors.accent,
+  },
+  confirmYesText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  confirmNo: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  confirmNoText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

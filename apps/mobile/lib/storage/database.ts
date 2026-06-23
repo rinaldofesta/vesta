@@ -178,6 +178,19 @@ export async function saveMessage(message: Message): Promise<void> {
   );
 }
 
+// Update a message's tool result after a deferred (confirmed/declined) action.
+export async function updateMessageToolResult(
+  id: string,
+  toolResult: string,
+): Promise<void> {
+  const d = await getDatabase();
+  await d.runAsync(
+    "UPDATE messages SET tool_result = ? WHERE id = ?",
+    toolResult,
+    id,
+  );
+}
+
 export async function getMessages(
   conversationId: string,
   limit = 50,

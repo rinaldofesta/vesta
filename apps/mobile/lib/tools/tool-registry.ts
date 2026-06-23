@@ -27,7 +27,7 @@ export const MVP_TOOLS: ToolDefinition[] = [
     description_it: "Imposta una sveglia ad un orario specifico",
     description_en: "Set an alarm at a specific time",
     category: "system_action",
-    confirmRequired: false,
+    confirmRequired: true,
     parameters: {
       type: "object",
       properties: {
@@ -54,7 +54,7 @@ export const MVP_TOOLS: ToolDefinition[] = [
     description_it: "Crea un evento o appuntamento nel calendario",
     description_en: "Create a calendar event or appointment",
     category: "system_action",
-    confirmRequired: false,
+    confirmRequired: true,
     parameters: {
       type: "object",
       properties: {
@@ -79,7 +79,7 @@ export const MVP_TOOLS: ToolDefinition[] = [
     description_it: "Crea un promemoria con notifica ad un certo orario",
     description_en: "Create a reminder with notification at a specific time",
     category: "system_action",
-    confirmRequired: false,
+    confirmRequired: true,
     parameters: {
       type: "object",
       properties: {
@@ -108,6 +108,20 @@ export const MVP_TOOLS: ToolDefinition[] = [
     },
   },
 ];
+
+// Whether a parsed tool call must be confirmed by the user before it runs.
+// `confirmEnabled` is the global `confirm_destructive_actions` setting; a tool
+// is gated only when both the global setting is on AND the tool is marked
+// destructive (confirmRequired). Unknown tools are treated as not-gated (they
+// fail validation downstream).
+export function toolRequiresConfirmation(
+  toolName: string,
+  confirmEnabled: boolean,
+): boolean {
+  if (!confirmEnabled) return false;
+  const def = MVP_TOOLS.find((t) => t.name === toolName);
+  return def?.confirmRequired ?? false;
+}
 
 export function formatToolsForPrompt(lang: "it" | "en"): string {
   return MVP_TOOLS.map((t) => {
