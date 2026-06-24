@@ -13,6 +13,11 @@ export interface GenerateOptions {
   temperature?: number;
   topP?: number;
   stopSequences?: string[];
+  // Repetition control. Without a penalty, low-temperature decoding on long
+  // free-text answers can fall into an endless loop (the model repeats the same
+  // phrase until it hits the token limit). >1.0 penalizes recently-seen tokens.
+  penaltyRepeat?: number;
+  penaltyLastN?: number;
   // When false, suppresses Qwen3-style chain-of-thought for this turn (faster).
   // Leave undefined to use the model's default (thinking on).
   enableThinking?: boolean;
