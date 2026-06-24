@@ -31,10 +31,11 @@ If applicable, add screenshots.
 
 ## Environment
 
-- **Device**: (e.g., Pixel 8 Pro, Samsung Galaxy S24)
-- **Android version**: (e.g., 14)
+- **Device**: (e.g., Pixel 10 Pro, Samsung Galaxy S26)
+- **Android version**: (e.g., 16)
 - **App version**: (e.g., 0.1.0)
-- **Model file**: (e.g., qwen3-4b-q4_k_m.gguf)
+- **Model**: (the active model, e.g., Qwen3 4B Instruct 2507 Q4_K_M — downloaded in-app or imported)
+- **RAM**: (e.g., 16 GB — helps diagnose out-of-memory issues)
 
 ## Additional context
 
