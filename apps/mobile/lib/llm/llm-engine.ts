@@ -39,12 +39,25 @@ const DEFAULT_OPTIONS: Required<
 };
 
 const DEFAULT_GENERATE: Required<
-  Pick<GenerateOptions, "maxTokens" | "temperature" | "topP" | "stopSequences">
+  Pick<
+    GenerateOptions,
+    | "maxTokens"
+    | "temperature"
+    | "topP"
+    | "stopSequences"
+    | "penaltyRepeat"
+    | "penaltyLastN"
+  >
 > = {
   maxTokens: 4096,
   temperature: 0.7,
   topP: 0.95,
   stopSequences: [],
+  // Anti-loop defaults. 1.1 is the conventional llama.cpp repeat penalty; the
+  // engine default is 1.0 (off), which lets greedy/low-temp decoding degenerate
+  // into endless repetition on long chat answers.
+  penaltyRepeat: 1.1,
+  penaltyLastN: 256,
 };
 
 // --- Async mutex: serializes load/unload/generate to prevent races ---
@@ -156,6 +169,8 @@ export function generate(
         n_predict: opts.maxTokens,
         temperature: opts.temperature,
         top_p: opts.topP,
+        penalty_repeat: opts.penaltyRepeat,
+        penalty_last_n: opts.penaltyLastN,
         stop: opts.stopSequences.length > 0 ? opts.stopSequences : undefined,
         // Pass through only when explicitly set, so the model's default stands otherwise.
         ...(options?.enableThinking === false ? { enable_thinking: false } : {}),
@@ -187,9 +202,11 @@ export function generate(
 }
 
 export function stopGeneration(): Promise<void> {
-  // stopCompletion is safe to call outside the lock (it signals the native layer)
+  // stopCompletion is safe to call outside the lock (it signals the native layer).
+  // It's a JSI call typed Promise<void> but can return undefined at runtime, so
+  // wrap in Promise.resolve to guarantee callers always get a thenable.
   if (context) {
-    return context.stopCompletion();
+    return Promise.resolve(context.stopCompletion());
   }
   return Promise.resolve();
 }
