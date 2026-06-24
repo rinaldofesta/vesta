@@ -103,26 +103,4 @@ class SystemActionsModule(reactContext: ReactApplicationContext) :
             promise.reject("CREATE_EVENT_ERROR", e.message, e)
         }
     }
-
-    @ReactMethod
-    fun setReminder(text: String, datetime: String, promise: Promise) {
-        try {
-            val millis = parseToMillis(datetime)
-
-            val intent = Intent(Intent.ACTION_INSERT).apply {
-                data = CalendarContract.Events.CONTENT_URI
-                putExtra(CalendarContract.Events.TITLE, text)
-                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, millis)
-                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, millis + 900000) // 15min
-                putExtra(CalendarContract.Events.HAS_ALARM, 1)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            reactApplicationContext.startActivity(intent)
-            promise.resolve(null)
-        } catch (e: DateTimeParseException) {
-            promise.reject("SET_REMINDER_ERROR", "Invalid datetime format: ${e.message}", e)
-        } catch (e: Exception) {
-            promise.reject("SET_REMINDER_ERROR", e.message, e)
-        }
-    }
 }
