@@ -247,6 +247,7 @@ vesta/
 | [Product Requirements](docs/PRD.md) | Vision, user stories, success metrics |
 | [Gameplan](docs/GAMEPLAN.md) | Phase-by-phase plan with exit gates |
 | [Benchmark Results](docs/FASE0-RESULTS.md) | Model validation data and analysis |
+| [Changelog](CHANGELOG.md) | Notable changes by release |
 
 ---
 
