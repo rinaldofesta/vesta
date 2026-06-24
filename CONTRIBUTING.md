@@ -38,9 +38,11 @@ Have an idea? [Open a feature request](../../issues/new?template=feature_request
 | Tool | Version | Notes |
 |------|---------|-------|
 | Node.js | 18+ | LTS recommended |
-| Java | 17 | Required for Android builds |
+| Java (JDK) | 17 | Required for Android builds |
 | Android SDK | API 34+ | Via Android Studio |
-| A GGUF model | — | e.g., Qwen3 4B Q4_K_M |
+| Android device or emulator | — | Physical device needs USB debugging enabled |
+
+No model file is needed up front — you download one in-app from the **Models** screen (or import your own `.gguf`) once the app is running.
 
 ### Getting Started
 
@@ -61,8 +63,22 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
 # Set Java 17 (macOS with Homebrew)
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 
-# Run
+# Build, install, and run on a device or emulator
 npx expo run:android
+```
+
+The first build compiles the llama.cpp engine via the NDK (~10–25 min); later runs are fast and Metro hot-reloads JS changes instantly.
+
+**Running on a physical phone:** enable Developer Options (tap **Build number** 7×) and **USB debugging**, connect with a data cable, and accept the "Allow USB debugging?" prompt. Verify with `adb devices`. If the app can't reach Metro over Wi-Fi, route it through the cable with `adb reverse tcp:8081 tcp:8081` and reload.
+
+### Quick checks
+
+Run these before opening a PR (and they run in CI):
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm run lint        # expo lint (eslint)
+npm test            # jest
 ```
 
 ### Known Gotchas
@@ -78,15 +94,17 @@ npx expo run:android
 
 ```
 apps/mobile/
-├── app/                   # Screens (Expo Router, file-based routing)
+├── app/                   # Screens (Expo Router): chat, history, models, settings
 ├── components/            # Reusable UI components
 ├── lib/
-│   ├── orchestrator/      # Core brain: router, prompt builder, tools
-│   ├── llm/               # llama.rn wrapper
+│   ├── orchestrator/      # Core brain: router, prompt builder, tools, memory, knowledge
+│   ├── llm/               # llama.rn engine wrapper
+│   ├── models/            # Curated catalog, download manager, model registry
+│   ├── native/            # TS bridges to the Kotlin modules
 │   ├── storage/           # SQLite layer (expo-sqlite)
 │   └── store/             # Zustand state management
-├── native/android/        # Kotlin: SystemActionsModule, Widget, Voice
-└── plugins/               # Expo config plugins
+├── native/android/        # Kotlin: SystemActionsModule, VestaService, widget + voice activities
+└── plugins/               # Expo config plugins (copy + register native code on prebuild)
 ```
 
 For full architecture details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  An offline-first AI personal assistant that runs entirely on your device.<br />
-  Set alarms, create events, manage reminders — no internet required.
+  An offline-first AI assistant that runs entirely on your phone.<br />
+  Chat, set alarms, create events, manage reminders — no internet, no accounts, no data leaving the device.
 </p>
 
 <p align="center">
@@ -19,109 +19,101 @@
   <a href="#"><img src="https://img.shields.io/badge/language-TypeScript-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/offline-first-C07A56.svg" alt="Offline First" /></a>
   <a href="#"><img src="https://img.shields.io/badge/LLM-on--device-8B5CF6.svg" alt="On-device LLM" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(Fase%201)-orange.svg" alt="Early / Fase 1" /></a>
 </p>
 
 ---
 
 ## What is Vesta?
 
-Vesta is an AI assistant that lives on your phone, not in the cloud. It uses [llama.cpp](https://github.com/ggerganov/llama.cpp) to run language models locally and translates natural language into real device actions — setting alarms, creating calendar events, managing reminders — all without sending a single byte to the internet.
+Vesta is an AI assistant that lives on your phone, not in the cloud. It runs open language models locally with [llama.cpp](https://github.com/ggerganov/llama.cpp) (via [llama.rn](https://github.com/mybigday/llama.rn)) and turns natural language into real device actions — setting alarms, creating calendar events, scheduling reminders — **without sending a single byte to the internet.**
+
+It's a real chat assistant too: ask questions, brainstorm, draft text, get a recipe. Automation is the bonus, not the whole point.
 
 Named after the Roman goddess of the hearth, Vesta is the sacred fire that never goes out.
 
-- **Fully offline.** Every feature works without internet. No API keys, no subscriptions, no data leaving your device.
-- **Real actions, not just chat.** Vesta doesn't just answer questions — it sets alarms, creates calendar events, and manages reminders through native Android APIs.
-- **Privacy by design.** Your conversations, memories, and documents stay on your device. Period.
-- **Bilingual from day 1.** English and Italian, with more languages coming.
+- **Offline-first.** Chat, actions, memory, and storage all work in airplane mode. No API keys, no subscriptions, no telemetry. (Voice input is the one optional extra that delegates to the system speech recognizer.)
+- **Private by design.** Conversations, memories, and documents stay on your device. Period.
+- **Real actions, not just chat.** Natural language maps to native Android intents — `"svegliami alle 7"` actually sets a 07:00 alarm.
+- **Bring your own model.** Any GGUF model runs. Download a curated pick in-app, or import your own `.gguf`.
+- **Bilingual from day one.** English and Italian, with more languages on the roadmap.
 
 ---
 
 ## Features
 
-**On-Device LLM — Bring Your Own Model**
-Runs any GGUF model locally via [llama.rn](https://github.com/nickhoo555/llama.rn). Pick the model that fits your device and your language — no cloud, no API calls, no vendor lock-in.
-
-**System Actions**
-Natural language maps to real Android intents — `"svegliami alle 7"` actually sets an alarm at 07:00.
-
-**Conversation Memory**
-Vesta learns about you across conversations. Personal facts are extracted and stored locally, injected into future prompts for personalized responses.
-
-**Knowledge Files**
-Upload `.md` or `.txt` files as portable personal context. Your notes, preferences, and reference docs — always available, always offline.
-
-**Conversation History**
-Full conversation persistence with SQLite. Browse, switch, and delete past conversations.
-
-**Home Screen Widget**
-2x2 Android widget with quick chat and voice input — one tap to talk to Vesta.
+| | |
+|---|---|
+| 🧠 **On-device LLM** | Runs any GGUF model locally via `llama.rn`. No cloud, no API calls, no vendor lock-in. |
+| 📥 **In-app model manager** | Browse a curated, RAM-aware catalog, download with progress/resume, add any HuggingFace GGUF repo, or import a local `.gguf`. Switch or delete anytime. |
+| ⏰ **System actions** | Alarms, calendar events, and reminders via native Android intents — with a confirmation step before anything touches your device. |
+| 💬 **Real conversation** | A genuine chat assistant, not just a command parser. Ask, discuss, draft. |
+| 🪪 **Conversation memory** | Personal facts are extracted and stored locally, then injected into future prompts for continuity. |
+| 📄 **Knowledge files** | Import `.md` / `.txt` files as portable, always-offline personal context. |
+| 🕘 **Conversation history** | Full persistence with SQLite — browse, switch, and delete past chats. |
+| 📱 **Home-screen widget** | A 2×2 widget with a quick-chat bar and voice entry — one tap to talk to Vesta. |
 
 ---
 
-## Architecture
+## Status
 
-```
-React Native App (TypeScript)
-  └─ Orchestrator
-      ├─ Tool Registry (JSON schema)
-      ├─ Router (message → LLM → tool_call or text)
-      ├─ Memory Manager (extract + inject personal facts)
-      └─ Knowledge Manager (portable .md context)
-          │
-          ▼
-Native Bridge (Kotlin)
-  ├─ llama.rn — on-device inference
-  ├─ SystemActionsModule — Android Intents
-  └─ Widget + Voice Activities
-          │
-          ▼
-Local Storage
-  ├─ SQLite (messages, conversations, memories, config)
-  └─ .gguf model files
-```
-
-Full architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+Vesta is **early and under active development** (Fase 1 — Android MVP). The core loop is working end-to-end on real hardware: load a model, chat, and trigger system actions fully offline. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
 ## Quick Start
 
+> Vesta is an Expo app with native Kotlin modules, so it runs as a **development build** (not Expo Go). You'll build it once with the native toolchain, then iterate over Metro.
+
 ### Prerequisites
 
-- Node.js 18+
-- Android SDK (API 34+)
-- Java 17
-- A model — **no file needed up front**: download one in-app from the **Models** screen (see below), or bring your own `.gguf`.
+- **Node.js** 18+
+- **Java (JDK) 17** — required by the Android Gradle build
+- **Android SDK** (API 34+) — easiest via [Android Studio](https://developer.android.com/studio)
+- An **Android device** (with USB debugging) **or** an emulator
 
-### Setup
+### Build and run
 
 ```bash
-# Clone
+# 1. Clone
 git clone https://github.com/rinaldofesta/vesta.git
 cd vesta/apps/mobile
 
-# Install dependencies
+# 2. Install dependencies (llama.rn needs legacy peer resolution with React 19)
 npm install --legacy-peer-deps
 
-# Generate native project
+# 3. Generate the native Android project
 npx expo prebuild
 
-# Fix Android SDK path (adjust to your SDK location)
+# 4. Point Gradle at your Android SDK (adjust the path to yours)
 echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
 
-# Set Java (macOS with Homebrew)
+# 5. Use Java 17 (macOS + Homebrew example)
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 
-# Run on connected device or emulator
+# 6. Build, install, and launch on a connected device or running emulator
 npx expo run:android
 ```
 
-### Get a Model
+The first build compiles the llama.cpp engine via the NDK and takes a while (~10–25 min). Later runs are fast — Metro hot-reloads your JS instantly.
 
-Vesta downloads models on-device — you choose what to download and what to keep.
+### Running on a physical phone
 
-1. Open the app and go to the **Models** screen (tap the "no model" banner, or **Settings → Manage Models**).
-2. Pick one and tap **Download** (progress + resume + cancel). The first model you install activates automatically.
+1. On the phone: **Settings → About phone → tap "Build number" 7×** to unlock Developer Options, then **Settings → System → Developer options → enable "USB debugging."**
+2. Connect the phone to your computer with a **data** USB cable and accept the **"Allow USB debugging?"** prompt.
+3. Confirm it's detected: `adb devices` should list it as `device` (not `unauthorized`).
+4. Run `npx expo run:android`. If the app loads to an error screen because it can't reach Metro over Wi-Fi, route Metro through the cable:
+   ```bash
+   adb reverse tcp:8081 tcp:8081
+   ```
+   then reload the app.
+
+### Get a model
+
+Vesta ships with **no model bundled** — you choose what to download and keep.
+
+1. Open the app → tap the **"no model"** banner (or **Settings → Manage Models**) to open the **Models** screen.
+2. Pick one and tap **Download** (progress, resume, cancel). The first model you install activates automatically.
    - Or **Add from HuggingFace** — paste any public GGUF repo and pick a quant.
    - Or **Import** a local `.gguf` you already have.
 3. Switch the active model or **Delete** any you don't want, anytime.
@@ -137,28 +129,52 @@ Vesta downloads models on-device — you choose what to download and what to kee
 
 All Apache-2.0. On Adreno (Snapdragon) devices, llama.cpp's GPU backend only accepts `Q4_0`/`Q6_K` quants; on CPU-bound SoCs (e.g. Pixel's Tensor G5), `Q4_K_M` is ideal.
 
+### Try it
+
+With a model active, type (English or Italian):
+
+```
+remind me to call mom tomorrow at 6pm
+svegliami domani alle 7 e mezza
+what's a quick recipe for carbonara?
+```
+
+Action requests show a **Confirm** step before Vesta touches your device. Plain questions just get answered.
+
 ---
 
-<!--
-## Screenshots
+## How it works
 
-TODO: Add 3-4 screenshots here. Needed:
-- Chat conversation (showing tool call + response)
-- Settings screen (model loaded)
-- Conversation history
-- Home screen widget
+```
+React Native App (TypeScript)
+  └─ Orchestrator
+      ├─ Tool Registry (JSON schema injected into the system prompt)
+      ├─ Router (message → LLM → tool_call JSON or plain text)
+      ├─ Memory Manager (extract + inject personal facts)
+      └─ Knowledge Manager (portable .md/.txt context)
+          │
+          ▼
+Native Bridge (Kotlin)
+  ├─ llama.rn — on-device inference (llama.cpp / GGUF)
+  ├─ SystemActionsModule — Android Intents (alarm, calendar)
+  ├─ VestaService — foreground service keeps the model in RAM
+  └─ Widget + Voice activities
+          │
+          ▼
+Local Storage
+  ├─ SQLite (messages, conversations, memories, config)
+  └─ .gguf model files
+```
 
-Format: PNG, phone frame mockup preferred.
-Use a table layout:
+The model never sees a tool API. Instead, tool schemas are injected into the system prompt, and the orchestrator parses the model's reply as either a tool-call JSON object or plain conversational text. This keeps the runtime a single binary (llama.cpp) and works with any instruct model.
 
-| Chat | Settings | History |
-|:---:|:---:|:---:|
-| ![Chat](docs/screenshots/chat.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
--->
+Full design notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Benchmark Results
+---
 
-Vesta is model-agnostic — you load whatever GGUF model you prefer. To validate the architecture, we benchmarked several models against 100 function-calling prompts (50 Italian, 50 English) before writing a single line of app code.
+## Benchmark results
+
+Vesta is model-agnostic — load whatever GGUF you prefer. To validate the architecture, we benchmarked several models against 100 function-calling prompts (50 Italian, 50 English) before writing a line of app code.
 
 | Model | Tool Accuracy | JSON Valid | Latency | Gate |
 |-------|:---:|:---:|:---:|:---:|
@@ -166,7 +182,7 @@ Vesta is model-agnostic — you load whatever GGUF model you prefer. To validate
 | Llama 3.2 3B | ~94% | ~91% | 3.3s | PASS |
 | Qwen3 8B | ~90% | ~88% | 25s | BORDERLINE |
 
-These results are specific to our benchmark dataset and system prompt. Your mileage may vary — and that's the point: try different models, find what works best for your device and language. Key finding: system prompt engineering moved accuracy from 42% to 98%. Details in [docs/FASE0-RESULTS.md](docs/FASE0-RESULTS.md).
+Results are specific to our dataset and system prompt — your mileage may vary, and that's the point. Key finding: prompt engineering moved accuracy from 42% to 98%. Details: [docs/FASE0-RESULTS.md](docs/FASE0-RESULTS.md).
 
 ---
 
@@ -174,15 +190,15 @@ These results are specific to our benchmark dataset and system prompt. Your mile
 
 | Phase | Status | Description |
 |-------|:---:|-------------|
-| **Fase 0** — Model Validation | Done | Benchmark models, validate architecture, finalize system prompt |
-| **Fase 1** — Android MVP | In Progress | Chat UI, 4 tools, orchestrator, conversation history, memory |
-| **Fase 2** — Core Polish | Planned | 10 tools, multi-turn context, error recovery |
-| **Fase 3** — Document Intelligence | Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
-| **Fase 4** — Mac Hub | Planned | Optional LAN hub with 70B model via Ollama |
-| **Fase 5** — iOS Port | Planned | MLX-Swift for inference, App Intents for actions |
-| **Fase 6** — MCP + Advanced | Planned | Expose tools as MCP server, agent swarm, accessibility |
+| **Fase 0** — Model Validation | ✅ Done | Benchmark models, validate architecture, finalize system prompt |
+| **Fase 1** — Android MVP | 🚧 In progress | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
+| **Fase 2** — Core Polish | 📋 Planned | More tools, multi-turn context, error recovery |
+| **Fase 3** — Document Intelligence | 📋 Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
+| **Fase 4** — Mac Hub | 📋 Planned | Optional LAN hub delegating heavy queries to a 70B model |
+| **Fase 5** — iOS Port | 📋 Planned | MLX-Swift inference, App Intents for actions |
+| **Fase 6** — MCP + Advanced | 📋 Planned | Expose tools as an MCP server, accessibility |
 
-Full roadmap with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md)
+Full plan with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
 
 ---
 
@@ -190,13 +206,13 @@ Full roadmap with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md)
 
 | Component | Technology | Why |
 |-----------|-----------|-----|
-| App | React Native + Expo | Cross-platform, TypeScript-native |
-| LLM Runtime | llama.cpp via llama.rn | Any GGUF model, GPU acceleration |
-| Native Bridge | Kotlin | Android Intents, Foreground Service |
+| App | React Native 0.83 + Expo SDK 55 | Cross-platform, TypeScript-native |
+| LLM runtime | llama.cpp via [llama.rn](https://github.com/mybigday/llama.rn) 0.11 | Any GGUF model, GPU acceleration |
+| Native bridge | Kotlin | Android intents, foreground service, widget |
 | Orchestrator | TypeScript | Cross-platform logic, strong typing |
-| Database | SQLite (expo-sqlite) | Zero config, native performance |
-| State | Zustand | Minimal, fast, TypeScript-friendly |
-| Models | Any GGUF via llama.cpp | Bring your own — tested with 3B to 8B models |
+| Database | SQLite (`expo-sqlite`) | Zero config, native performance |
+| State | Zustand 5 | Minimal, fast, TypeScript-friendly |
+| Models | Any GGUF | Bring your own — validated from 1.7B to 8B |
 
 ---
 
@@ -205,17 +221,19 @@ Full roadmap with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md)
 ```
 vesta/
 ├── apps/mobile/               # React Native + Expo app
-│   ├── app/                   # Screens (Expo Router)
+│   ├── app/                   # Screens (Expo Router): chat, history, models, settings
 │   ├── components/            # Chat UI components
 │   ├── lib/
-│   │   ├── orchestrator/      # Core brain (router, tools, memory)
-│   │   ├── llm/               # llama.rn wrapper
+│   │   ├── orchestrator/      # Router, prompt builder, tools, memory, knowledge
+│   │   ├── llm/               # llama.rn engine wrapper
+│   │   ├── models/            # Curated catalog + download manager + registry
+│   │   ├── native/            # TS bridges to the Kotlin modules
 │   │   ├── storage/           # SQLite layer
-│   │   └── store/             # Zustand state management
-│   ├── native/android/        # Kotlin native modules
-│   └── plugins/               # Expo config plugins
-├── scripts/benchmark/         # Fase 0 model validation
-└── docs/                      # Architecture, spec, gameplan
+│   │   └── store/             # Zustand state
+│   ├── native/android/        # Kotlin: system actions, foreground service, widget, voice
+│   └── plugins/               # Expo config plugins (copy + register native code)
+├── scripts/benchmark/         # Fase 0 model validation harness
+└── docs/                      # Architecture, spec, PRD, gameplan, benchmark results
 ```
 
 ---
@@ -234,25 +252,27 @@ vesta/
 
 ## Contributing
 
-Contributions are welcome! Whether it's a bug fix, new tool implementation, or documentation improvement — we'd love your help.
+Contributions are welcome — bug fixes, new tools, translations, docs. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions, and the development workflow, and please follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Good first contributions: bug fixes in existing features, test coverage, documentation, new tool implementations, and Tier-2 language translations.
+
+Found a security issue? Please follow [SECURITY.md](SECURITY.md) — don't open a public issue.
 
 ---
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE) © 2026 Rinaldo Festa.
 
 ---
 
 ## Acknowledgments
 
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) — The engine that makes on-device LLM possible
-- [llama.rn](https://github.com/nickhoo555/llama.rn) — React Native bindings for llama.cpp
-- [Expo](https://expo.dev) — Making React Native development sane
-- [Qwen](https://huggingface.co/Qwen), [Meta Llama](https://huggingface.co/meta-llama), [Google Gemma](https://huggingface.co/google) — Models we tested against
-- [Zustand](https://github.com/pmndrs/zustand) — State management that gets out of the way
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — the engine that makes on-device LLM possible
+- [llama.rn](https://github.com/mybigday/llama.rn) — React Native bindings for llama.cpp
+- [Expo](https://expo.dev) — making React Native development sane
+- [Qwen](https://huggingface.co/Qwen), [Meta Llama](https://huggingface.co/meta-llama), [Nomic](https://huggingface.co/nomic-ai) — open models Vesta builds on
+- [Zustand](https://github.com/pmndrs/zustand) — state management that gets out of the way
 
 ---
 
