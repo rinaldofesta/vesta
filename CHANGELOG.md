@@ -7,7 +7,32 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
-_Work in progress toward Fase 2. See [docs/GAMEPLAN.md](docs/GAMEPLAN.md)._
+Fase 2 — Core Polish shipped. All 10 core tools and the orchestrator query
+loop are implemented and CI-verified across PRs #11–#13 (typecheck, lint,
+tests, Android build). On-device verification of the new contacts/calendar
+tools is still pending a rebuild. See [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
+
+### Added
+
+- **Six more system tools**, completing the Fase 2 set: `set_timer`,
+  `navigate_to` (#11); `search_contacts`, `make_call`, `send_sms`, and
+  `get_calendar_events` (#13). All 10 tools work offline via native Android
+  intents or `ContentResolver` queries, with destructive actions gated by an
+  explicit confirmation step.
+- **Orchestrator query loop** — read tools (`get_calendar_events`,
+  `search_contacts`) execute inline, so questions like "che appuntamenti ho
+  domani?" are answered in natural language from real on-device data, with a
+  JSON-fallback guard for malformed model output.
+- **Honest tool-result messages** (#12) — `set_alarm` no longer claims a
+  future date (Android arms only the next occurrence), and `create_event`
+  reports that the calendar editor opened rather than falsely claiming the
+  event was saved.
+- **Cancellable memory extraction** (#12) — a background memory-extraction
+  pass is now stopped when the user sends a new message, so a background LLM
+  run never blocks the next turn; memory injection no longer self-reinforces
+  the ranking.
+- **Bilingual** IT/EN coverage extended to all 10 tools' prompts and
+  confirmation messages.
 
 ## [0.1.0] — 2026-06-24
 
@@ -32,4 +57,4 @@ real hardware: load a model, chat, and trigger system actions fully offline.
   on-device test (a long free-text answer could otherwise loop, and Stop could
   throw on a JSI quirk in `llama.rn`).
 - `ACTION_SET_ALARM` sets the next occurrence of a time; specific future-dated
-  alarms are out of scope for the MVP.
+  alarms are out of scope for the MVP. The tool result now states this honestly.
