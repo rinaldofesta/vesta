@@ -90,6 +90,8 @@ REGOLE:
 - I parametri NON obbligatori possono essere omessi. NON chiedere end time, durata, o altri parametri opzionali
 - Chiedi chiarimento SOLO se manca un parametro OBBLIGATORIO e non è deducibile dal contesto
 - Quando l'utente dice "ricordami" o "promemoria", usa set_reminder. Quando dice "fissa", "appuntamento", "evento", "calendario", usa create_event
+- Usa set_timer per un conto alla rovescia espresso in minuti (es. "timer di 10 minuti", "tra 5 minuti"). Usa set_alarm per un orario specifico (es. "alle 7")
+- Usa navigate_to per indicazioni o navigazione verso un luogo (es. "portami a...", "naviga verso...", "come arrivo a...")
 - "Entro" una data significa impostare il promemoria/evento a quella data
 - Il giorno della settimana (es. "giovedì", "venerdì") si riferisce al PROSSIMO di quel giorno
 - Rispondi SOLO con JSON quando l'utente chiede un'AZIONE (sveglia, evento, promemoria)
@@ -126,6 +128,8 @@ RULES:
 - Non-required parameters CAN be omitted. Do NOT ask for end time, duration, or other optional parameters
 - Ask for clarification ONLY when a REQUIRED parameter is missing and cannot be inferred from context
 - When the user says "remind me" or "reminder", use set_reminder. When they say "schedule", "appointment", "event", "calendar", use create_event
+- Use set_timer for a countdown given in minutes (e.g. "set a 10 minute timer", "in 5 minutes"). Use set_alarm for a specific clock time (e.g. "at 7")
+- Use navigate_to for directions or navigation to a place (e.g. "take me to...", "navigate to...", "directions to...")
 - "By" a date means set the reminder/event on that date
 - Day of the week (e.g., "Monday", "Thursday") refers to the NEXT occurrence of that day
 - Respond ONLY with JSON when the user asks for an ACTION (alarm, event, reminder)

@@ -3,7 +3,7 @@
 
 import type { ToolCallResult } from "./types";
 import { MVP_TOOLS } from "../tools/tool-registry";
-import { setAlarm, createEvent } from "../native/system-actions";
+import { setAlarm, createEvent, setTimer, navigateTo } from "../native/system-actions";
 import { scheduleReminder } from "../native/reminders";
 import { isValidYMD } from "./date-utils";
 
@@ -94,6 +94,15 @@ export async function dispatchToolCall(
           parameters.text as string,
           parameters.datetime as string,
         );
+
+      case "set_timer":
+        return await setTimer(
+          parameters.minutes as number,
+          parameters.label as string | undefined,
+        );
+
+      case "navigate_to":
+        return await navigateTo(parameters.destination as string);
 
       case "general_chat":
         return { success: true, message: "OK" };
