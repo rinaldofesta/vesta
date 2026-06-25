@@ -16,6 +16,7 @@ import {
   getMemoriesForPrompt,
   extractMemories,
   shouldExtractMemory,
+  cancelExtraction,
 } from "./memory-manager";
 import { getKnowledgeForPrompt } from "./knowledge-manager";
 import { getConfig } from "../storage/database";
@@ -94,6 +95,11 @@ export async function processMessage(
   messages.push({ role: "user", content: userText });
 
   try {
+    // A background memory-extraction pass may still hold the engine lock.
+    // Cancel it (it stops the native completion) so this user turn starts
+    // immediately instead of waiting for the extraction to finish (ORCH-1).
+    cancelExtraction();
+
     // Lower temperature than the engine default: this turn must emit clean
     // tool-call JSON, and near-deterministic sampling improves validity and
     // tool-selection consistency without hurting chat quality much (LLM-5).
