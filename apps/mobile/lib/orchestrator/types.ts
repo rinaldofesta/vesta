@@ -18,6 +18,10 @@ export interface ToolCallResult {
   success: boolean;
   message: string;
   error?: string;
+  // For read/query tools (e.g. get_calendar_events, search_contacts): the
+  // fetched data, serialized for the model to ground a natural-language answer
+  // in. The orchestrator feeds this back for a second generation.
+  data?: string;
 }
 
 export interface Message {

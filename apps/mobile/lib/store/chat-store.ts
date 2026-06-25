@@ -194,6 +194,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       (token) => {
         set((s) => ({ streamingText: s.streamingText + token }));
       },
+      // Read tools generate twice; clear the tool-call JSON so only the
+      // grounded answer streams.
+      () => set({ streamingText: "" }),
     );
 
     // Create assistant message based on response type
@@ -294,7 +297,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let result: ToolCallResult;
     if (confirmed) {
       try {
-        result = await executeToolCall(pending.tool, pending.parameters);
+        result = await executeToolCall(
+          pending.tool,
+          pending.parameters,
+          get().language,
+        );
       } catch (err) {
         result = {
           success: false,

@@ -22,6 +22,7 @@
         "com.android.alarm.permission.SET_ALARM",
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
+        "android.permission.READ_CONTACTS",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",

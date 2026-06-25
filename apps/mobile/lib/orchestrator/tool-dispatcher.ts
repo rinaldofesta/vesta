@@ -1,10 +1,13 @@
 // Tool Dispatcher — routes parsed tool calls to native module actions.
 // In Fase 1, tools map to Android Intents via SystemActionsModule.
 
-import type { ToolCallResult } from "./types";
+import type { ToolCallResult, Language } from "./types";
 import { MVP_TOOLS } from "../tools/tool-registry";
 import { setAlarm, createEvent, setTimer, navigateTo } from "../native/system-actions";
 import { scheduleReminder } from "../native/reminders";
+import { searchContacts } from "../native/contacts";
+import { makeCall, sendSms } from "../native/communication";
+import { getCalendarEvents } from "../native/calendar";
 import { isValidYMD } from "./date-utils";
 
 const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
@@ -65,6 +68,7 @@ function validateParams(
 export async function dispatchToolCall(
   tool: string,
   parameters: Record<string, unknown>,
+  lang: Language = "en",
 ): Promise<ToolCallResult> {
   const validationError = validateParams(tool, parameters);
   if (validationError) {
@@ -103,6 +107,22 @@ export async function dispatchToolCall(
 
       case "navigate_to":
         return await navigateTo(parameters.destination as string);
+
+      case "search_contacts":
+        return await searchContacts(parameters.query as string, lang);
+
+      case "make_call":
+        return await makeCall(parameters.contact as string, lang);
+
+      case "send_sms":
+        return await sendSms(
+          parameters.contact as string,
+          parameters.text as string,
+          lang,
+        );
+
+      case "get_calendar_events":
+        return await getCalendarEvents(parameters.date as string, lang);
 
       case "general_chat":
         return { success: true, message: "OK" };
