@@ -76,6 +76,24 @@ class SystemActionsModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setTimer(seconds: Int, label: String, promise: Promise) {
+        try {
+            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                if (label.isNotEmpty()) {
+                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactApplicationContext.startActivity(intent)
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("SET_TIMER_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
     fun createCalendarEvent(title: String, start: String, end: String, location: String, promise: Promise) {
         try {
             val startMillis = parseToMillis(start)

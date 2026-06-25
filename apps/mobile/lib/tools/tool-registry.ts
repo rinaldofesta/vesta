@@ -94,6 +94,46 @@ export const MVP_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "set_timer",
+    description_it:
+      "Imposta un timer (conto alla rovescia) di una durata in minuti",
+    description_en: "Set a countdown timer for a number of minutes",
+    category: "system_action",
+    confirmRequired: false,
+    parameters: {
+      type: "object",
+      properties: {
+        minutes: {
+          type: "number",
+          description: "Timer duration in minutes (must be > 0)",
+        },
+        label: {
+          type: "string",
+          description: "Optional label for the timer",
+        },
+      },
+      required: ["minutes"],
+    },
+  },
+  {
+    name: "navigate_to",
+    description_it:
+      "Avvia la navigazione verso una destinazione usando l'app mappe",
+    description_en: "Start navigation to a destination using the maps app",
+    category: "system_action",
+    confirmRequired: false,
+    parameters: {
+      type: "object",
+      properties: {
+        destination: {
+          type: "string",
+          description: "Destination address or place name",
+        },
+      },
+      required: ["destination"],
+    },
+  },
+  {
     name: "general_chat",
     description_it:
       "Rispondi a una domanda generica, una conversazione, o una richiesta creativa",
