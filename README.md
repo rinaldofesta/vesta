@@ -61,18 +61,19 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 |---|---|
 | 🧠 **On-device LLM** | Runs any GGUF model locally via `llama.rn`. No cloud, no API calls, no vendor lock-in. |
 | 📥 **In-app model manager** | Browse a curated, RAM-aware catalog, download with progress/resume, add any HuggingFace GGUF repo, or import a local `.gguf`. Switch or delete anytime. |
-| ⏰ **System actions** | Alarms, calendar events, and reminders via native Android intents — with a confirmation step before anything touches your device. |
+| ⏰ **System actions** | All 10 core tools via native Android intents — alarms, calendar events & read, reminders, timers, navigation, calls, SMS, and contacts search — with a confirmation step before any destructive action. |
 | 💬 **Real conversation** | A genuine chat assistant, not just a command parser. Ask, discuss, draft. |
 | 🪪 **Conversation memory** | Personal facts are extracted and stored locally, then injected into future prompts for continuity. |
 | 📄 **Knowledge files** | Import `.md` / `.txt` files as portable, always-offline personal context. |
 | 🕘 **Conversation history** | Full persistence with SQLite — browse, switch, and delete past chats. |
 | 📱 **Home-screen widget** | A 2×2 widget with a quick-chat bar and voice entry — one tap to talk to Vesta. |
+| 🔁 **Query loop** | Read tools (calendar, contacts) run inline, so questions like "che appuntamenti ho domani?" get answered in natural language from your real on-device data. |
 
 ---
 
 ## Status
 
-Vesta is **early and under active development** (Fase 1 — Android MVP). The core loop is working end-to-end on real hardware: load a model, chat, and trigger system actions fully offline. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
+Vesta is **early and under active development** (Fase 2 — Core Polish shipped). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The chat-and-alarm core is verified on real hardware; the new Fase 2 tools (timer, navigation, contacts, calls, SMS, calendar read) are shipped and CI-verified, with on-device verification still pending. Next up: Fase 3 — Document Intelligence (RAG). Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
@@ -206,8 +207,8 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 | Phase | Status | Description |
 |-------|:---:|-------------|
 | **Fase 0** — Model Validation | ✅ Done | Benchmark models, validate architecture, finalize system prompt |
-| **Fase 1** — Android MVP | 🚧 In progress | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
-| **Fase 2** — Core Polish | 📋 Planned | More tools, multi-turn context, error recovery |
+| **Fase 1** — Android MVP | ✅ Done | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
+| **Fase 2** — Core Polish | 🚧 Shipped | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, error recovery — CI-verified; new tools pending on-device check |
 | **Fase 3** — Document Intelligence | 📋 Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
 | **Fase 4** — Mac Hub | 📋 Planned | Optional LAN hub delegating heavy queries to a 70B model |
 | **Fase 5** — iOS Port | 📋 Planned | MLX-Swift inference, App Intents for actions |
