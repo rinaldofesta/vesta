@@ -40,6 +40,21 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" width="24%" alt="Real on-device chat" />
+  <img src="docs/screenshots/system-actions.png" width="24%" alt="Natural-language actions with a confirmation step" />
+  <img src="docs/screenshots/models.png" width="24%" alt="In-app model manager" />
+  <img src="docs/screenshots/history.png" width="24%" alt="Conversation history" />
+</p>
+
+<p align="center">
+  <sub>Real chat · natural-language actions with a confirm step · in-app model manager · conversation history — captured on a Pixel 10 Pro, fully offline.</sub>
+</p>
+
+---
+
 ## Features
 
 | | |
