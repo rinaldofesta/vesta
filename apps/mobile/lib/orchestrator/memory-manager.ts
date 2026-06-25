@@ -3,7 +3,7 @@
 // Runs asynchronously after each assistant response (fire-and-forget).
 
 import { v4 as uuid } from "uuid";
-import { generate, isLoaded } from "../llm/llm-engine";
+import { generate, isLoaded, stopGeneration } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
 import {
   saveMemory,
@@ -36,14 +36,30 @@ const VALID_CATEGORIES = new Set<string>([
   "topic_interest",
 ]);
 
-// Prevent concurrent extraction runs
+// Prevent concurrent extraction runs.
 let extractionRunning = false;
+// Abort flag: set when a user turn needs the engine, or on timeout. The
+// extraction's token callback checks this and stops the native completion so
+// the engine lock is released promptly instead of blocking the user's message.
+let extractionAbort = false;
 const EXTRACTION_TIMEOUT_MS = 30_000;
+
+/**
+ * Cancel an in-flight extraction so the user's next message isn't queued
+ * behind a background LLM pass. Safe to call when nothing is running.
+ */
+export function cancelExtraction(): void {
+  if (!extractionRunning) return;
+  extractionAbort = true;
+  stopGeneration().catch(() => {});
+}
 
 /**
  * Extract personal facts from a conversation exchange using the LLM.
  * Runs asynchronously — fire and forget. Skips if model is busy or unloaded.
- * Includes a timeout to prevent the lock from being held forever if LLM hangs.
+ * Cancellable: processMessage calls cancelExtraction() so a user turn never
+ * waits for a background extraction to finish. Includes a timeout that stops
+ * the generation (not just the guard) if the LLM hangs.
  */
 export async function extractMemories(
   userText: string,
@@ -53,10 +69,12 @@ export async function extractMemories(
 ): Promise<void> {
   if (!isLoaded() || extractionRunning) return;
   extractionRunning = true;
+  extractionAbort = false;
 
   const timeoutId = setTimeout(() => {
-    console.warn("[MemoryManager] Extraction timed out, releasing lock");
-    extractionRunning = false;
+    console.warn("[MemoryManager] Extraction timed out, stopping generation");
+    extractionAbort = true;
+    stopGeneration().catch(() => {});
   }, EXTRACTION_TIMEOUT_MS);
 
   try {
@@ -80,11 +98,19 @@ Do not invent anything. Extract ONLY information explicitly stated by the user.`
 
     // Extraction emits a tiny JSON array — thinking is pure waste here, and a
     // small token cap keeps this background pass short on a phone (LLM-4).
-    const result = await generate(messages, {
-      maxTokens: 256,
-      temperature: 0.1,
-      enableThinking: false,
-    });
+    const result = await generate(
+      messages,
+      {
+        maxTokens: 256,
+        temperature: 0.1,
+        enableThinking: false,
+      },
+      // Check the abort flag on each token so cancellation lands within a
+      // token or two instead of running to completion.
+      () => {
+        if (extractionAbort) stopGeneration().catch(() => {});
+      },
+    );
 
     const raw = stripThinkTags(result.text);
     const extracted = parseExtractionResult(raw);
@@ -93,10 +119,13 @@ Do not invent anything. Extract ONLY information explicitly stated by the user.`
       await saveExtractedMemories(extracted, messageId);
     }
   } catch (err) {
-    console.warn("[MemoryManager] Extraction failed:", err);
+    if (!extractionAbort) {
+      console.warn("[MemoryManager] Extraction failed:", err);
+    }
   } finally {
     clearTimeout(timeoutId);
     extractionRunning = false;
+    extractionAbort = false;
   }
 }
 
@@ -210,9 +239,12 @@ export async function getMemoriesForPrompt(
   const memories = await getTopMemories(limit);
   if (memories.length === 0) return null;
 
-  // Bump access count for all injected memories
-  await bumpMemoryAccess(memories.map((m) => m.id));
-
+  // NOTE: do NOT bump access_count/last_accessed here. Bumping on every prompt
+  // injection pinned the same top-N memories forever: their last_accessed was
+  // always "now", so the time-decay factor in getTopMemories stayed at ~1.0 and
+  // decayMemories() could never fire. That made the ranking self-reinforcing
+  // (memories that fell out of the top-N could never climb back) and froze out
+  // newly extracted facts. Leave access metrics untouched at injection time.
   const lines = memories.map(
     (m) => `- (${m.category}) ${m.content}`,
   );

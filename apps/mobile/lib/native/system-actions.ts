@@ -37,7 +37,17 @@ export async function setAlarm(
     // NOTE: Android's AlarmClock.ACTION_SET_ALARM ignores the date parameter.
     // Alarms are always set for the next occurrence of the given time.
     await SystemActionsModule.setAlarm(hours, minutes, label || "", date || "");
-    return { success: true, message: `Alarm set for ${time}${date ? ` on ${date}` : ""}` };
+    // Be honest about the date limitation: telling the user the alarm is set
+    // for tomorrow when Android actually arms the next 07:30 (likely today)
+    // is a trust-breaking lie for an alarm app.
+    if (date) {
+      return {
+        success: true,
+        message:
+          `Alarm set for ${time} (Android arms the next occurrence of this time, not ${date}).`,
+      };
+    }
+    return { success: true, message: `Alarm set for ${time}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, message: "Failed to set alarm", error: msg };
@@ -115,7 +125,13 @@ export async function createEvent(
       end || "",
       location || "",
     );
-    return { success: true, message: `Event "${title}" created` };
+    // ACTION_INSERT opens the calendar EDITOR; the user can still cancel there.
+    // Don't claim the event is created until they save — record that the editor
+    // was opened so a canceled insert isn't logged as a success.
+    return {
+      success: true,
+      message: `Calendar editor opened for "${title}" — confirm to save.`,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, message: "Failed to create event", error: msg };
