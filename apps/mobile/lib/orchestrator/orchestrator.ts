@@ -10,6 +10,7 @@ import type {
   Language,
   OrchestratorResponse,
   Message,
+  ToolCallResult,
 } from "./types";
 import { dispatchToolCall } from "./tool-dispatcher";
 import {
@@ -20,8 +21,7 @@ import {
 } from "./memory-manager";
 import { getKnowledgeForPrompt } from "./knowledge-manager";
 import { getConfig } from "../storage/database";
-import { toolRequiresConfirmation } from "../tools/tool-registry";
-import type { ToolCallResult } from "./types";
+import { toolRequiresConfirmation, toolReturnsData } from "../tools/tool-registry";
 
 const MAX_HISTORY_MESSAGES = 20;
 
@@ -30,8 +30,9 @@ const MAX_HISTORY_MESSAGES = 20;
 export function executeToolCall(
   tool: string,
   parameters: Record<string, unknown>,
+  lang: Language = "en",
 ): Promise<ToolCallResult> {
-  return dispatchToolCall(tool, parameters);
+  return dispatchToolCall(tool, parameters, lang);
 }
 
 export async function processMessage(
@@ -39,6 +40,10 @@ export async function processMessage(
   history: Message[],
   lang: Language,
   onToken?: (token: string) => void,
+  // Read/query tools generate twice (detect the tool, then answer from its
+  // data). This clears the streamed tool-call JSON before the answer streams,
+  // so the user sees a clean reply instead of "JSON…answer".
+  onStreamReset?: () => void,
 ): Promise<OrchestratorResponse> {
   if (!isLoaded()) {
     return { type: "error", error: "No model loaded" };
@@ -116,29 +121,73 @@ export async function processMessage(
     let response: OrchestratorResponse;
 
     if (toolCall) {
-      const confirmMessage =
-        toolCall.message || (lang === "it" ? "Fatto!" : "Done!");
-      if (toolRequiresConfirmation(toolCall.tool, confirmEnabled)) {
-        // Don't touch the device yet — hand the proposed action to the UI for
-        // explicit user confirmation. The store dispatches it via executeToolCall.
-        response = {
-          type: "pending_tool_call",
-          tool: toolCall.tool,
-          parameters: toolCall.parameters,
-          message: confirmMessage,
-        };
-      } else {
+      if (toolReturnsData(toolCall.tool)) {
+        // Read/query tool: run it, then re-generate an answer grounded in the
+        // returned data (a function-calling loop). Never gated — read-only.
         const toolResult = await dispatchToolCall(
           toolCall.tool,
           toolCall.parameters,
+          lang,
         );
-        response = {
-          type: "tool_call",
-          tool: toolCall.tool,
-          parameters: toolCall.parameters,
-          message: confirmMessage,
-          result: toolResult,
-        };
+        if (!toolResult.success) {
+          // e.g. permission denied or no data — surface the reason as text.
+          response = { type: "text", content: toolResult.message };
+        } else {
+          // Clear the streamed tool-call JSON, then stream the real answer.
+          onStreamReset?.();
+          const followupMessages: CompletionMessage[] = [
+            ...messages,
+            { role: "assistant", content: raw },
+            {
+              role: "user",
+              content:
+                lang === "it"
+                  ? `Risultato dello strumento ${toolCall.tool}:\n${toolResult.data ?? "(nessun dato)"}\n\nRispondi alla mia richiesta precedente in italiano, in modo naturale e conciso, usando SOLO questi dati. Non mostrare JSON.`
+                  : `Result of tool ${toolCall.tool}:\n${toolResult.data ?? "(no data)"}\n\nAnswer my previous request in English, naturally and concisely, using ONLY this data. Do not show JSON.`,
+            },
+          ];
+          const followup = await generate(
+            followupMessages,
+            { maxTokens: 1024, temperature: 0.4 },
+            onToken,
+          );
+          // Guard: if the model answered with a tool-call JSON instead of prose
+          // (it shouldn't, but the system prompt still allows JSON), don't dump
+          // raw JSON at the user — fall back to a plain message.
+          const answer =
+            parseResponse(followup.text) || looksLikeToolAttempt(followup.text)
+              ? lang === "it"
+                ? "Ho recuperato i dati ma non sono riuscito a formulare una risposta. Riprova."
+                : "I fetched the data but couldn't phrase an answer. Please try again."
+              : followup.text;
+          response = { type: "text", content: answer };
+        }
+      } else {
+        const confirmMessage =
+          toolCall.message || (lang === "it" ? "Fatto!" : "Done!");
+        if (toolRequiresConfirmation(toolCall.tool, confirmEnabled)) {
+          // Don't touch the device yet — hand the proposed action to the UI for
+          // explicit user confirmation. The store dispatches it via executeToolCall.
+          response = {
+            type: "pending_tool_call",
+            tool: toolCall.tool,
+            parameters: toolCall.parameters,
+            message: confirmMessage,
+          };
+        } else {
+          const toolResult = await dispatchToolCall(
+            toolCall.tool,
+            toolCall.parameters,
+            lang,
+          );
+          response = {
+            type: "tool_call",
+            tool: toolCall.tool,
+            parameters: toolCall.parameters,
+            message: confirmMessage,
+            result: toolResult,
+          };
+        }
       }
     } else if (looksLikeToolAttempt(raw)) {
       // The model tried to emit a tool call but it didn't parse — almost always

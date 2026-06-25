@@ -14,6 +14,10 @@ export interface ToolDefinition {
   description_en: string;
   category: "system_action" | "knowledge" | "utility";
   confirmRequired: boolean;
+  // Read/query tools: the dispatcher returns data that must be fed back to the
+  // model for a natural-language answer (a second generation), rather than the
+  // model's pre-written confirmation being the final reply.
+  returnsData?: boolean;
   parameters: {
     type: "object";
     properties: Record<string, ParameterDef>;
@@ -134,6 +138,80 @@ export const MVP_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "search_contacts",
+    description_it:
+      "Cerca un contatto nella rubrica per nome e ottieni i suoi numeri",
+    description_en: "Search the address book for a contact by name",
+    category: "system_action",
+    confirmRequired: false,
+    returnsData: true,
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Name (or part of a name) to search for",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "make_call",
+    description_it: "Avvia una telefonata a un contatto o numero",
+    description_en: "Start a phone call to a contact or number",
+    category: "system_action",
+    confirmRequired: true,
+    parameters: {
+      type: "object",
+      properties: {
+        contact: {
+          type: "string",
+          description: "Contact name or phone number to call",
+        },
+      },
+      required: ["contact"],
+    },
+  },
+  {
+    name: "send_sms",
+    description_it: "Componi un SMS per un contatto o numero",
+    description_en: "Compose an SMS to a contact or number",
+    category: "system_action",
+    confirmRequired: true,
+    parameters: {
+      type: "object",
+      properties: {
+        contact: {
+          type: "string",
+          description: "Contact name or phone number to message",
+        },
+        text: { type: "string", description: "Message body" },
+      },
+      required: ["contact", "text"],
+    },
+  },
+  {
+    name: "get_calendar_events",
+    description_it:
+      "Leggi gli appuntamenti del calendario per una data specifica",
+    description_en: "Read calendar events/appointments for a specific date",
+    category: "system_action",
+    confirmRequired: false,
+    returnsData: true,
+    parameters: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description: "Day to read events for (YYYY-MM-DD)",
+          format: "YYYY-MM-DD",
+        },
+      },
+      required: ["date"],
+    },
+  },
+  {
     name: "general_chat",
     description_it:
       "Rispondi a una domanda generica, una conversazione, o una richiesta creativa",
@@ -161,6 +239,11 @@ export function toolRequiresConfirmation(
   if (!confirmEnabled) return false;
   const def = MVP_TOOLS.find((t) => t.name === toolName);
   return def?.confirmRequired ?? false;
+}
+
+// Read/query tools whose result must be fed back to the model for an answer.
+export function toolReturnsData(toolName: string): boolean {
+  return MVP_TOOLS.find((t) => t.name === toolName)?.returnsData ?? false;
 }
 
 export function formatToolsForPrompt(lang: "it" | "en"): string {

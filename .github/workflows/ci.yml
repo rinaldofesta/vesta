@@ -65,6 +65,13 @@ jobs:
       - name: Expo prebuild (Android)
         run: npx expo prebuild --platform android --no-install
 
+      # Raise the Gradle JVM heap above Expo's 2 GB default — packageDebug OOM'd
+      # (java heap space) once the app grew more native deps. Last definition in
+      # gradle.properties wins, so this overrides the generated value.
+      - name: Raise Gradle heap
+        working-directory: apps/mobile/android
+        run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> gradle.properties
+
       # Compiles the native/Kotlin layer (SystemActionsModule, etc.). llama.rn
       # ships prebuilt jniLibs, so no NDK source build is required.
       - name: Assemble debug APK
