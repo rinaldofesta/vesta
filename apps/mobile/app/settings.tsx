@@ -230,7 +230,7 @@ export default function SettingsScreen() {
         <Text style={styles.aboutText}>
           Vesta is an offline-first AI assistant that runs entirely on your device. No cloud, no data leaves your phone.
         </Text>
-        <Text style={styles.versionText}>v0.1.0 — Fase 1 MVP</Text>
+        <Text style={styles.versionText}>v0.1.0 — Fase 2 (Core Polish)</Text>
       </View>
     </ScrollView>
   );

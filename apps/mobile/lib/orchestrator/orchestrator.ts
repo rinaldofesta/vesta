@@ -11,6 +11,7 @@ import type {
   OrchestratorResponse,
   Message,
   ToolCallResult,
+  ParsedToolCall,
 } from "./types";
 import { dispatchToolCall } from "./tool-dispatcher";
 import {
@@ -115,91 +116,138 @@ export async function processMessage(
     );
     const raw = result.text;
 
+    // Handles a successfully-parsed tool call. Extracted so both the first-pass
+    // parse and the malformed-JSON retry below reuse the same dispatch logic:
+    // read/query tools run inline (the query loop), destructive tools are gated
+    // for confirmation, everything else dispatches directly.
+    const handleToolCall = async (
+      call: ParsedToolCall,
+      callRaw: string,
+    ): Promise<Exclude<OrchestratorResponse, { type: "error" }>> => {
+      if (toolReturnsData(call.tool)) {
+        // Read/query tool: run it, then re-generate an answer grounded in the
+        // returned data (a function-calling loop). Never gated — read-only.
+        const toolResult = await dispatchToolCall(
+          call.tool,
+          call.parameters,
+          lang,
+        );
+        if (!toolResult.success) {
+          // e.g. permission denied or no data — surface the reason as text.
+          return { type: "text", content: toolResult.message };
+        }
+        // Clear the streamed tool-call JSON, then stream the real answer.
+        onStreamReset?.();
+        const followupMessages: CompletionMessage[] = [
+          ...messages,
+          { role: "assistant", content: callRaw },
+          {
+            role: "user",
+            content:
+              lang === "it"
+                ? `Risultato dello strumento ${call.tool}:\n${toolResult.data ?? "(nessun dato)"}\n\nRispondi alla mia richiesta precedente in italiano, in modo naturale e conciso, usando SOLO questi dati. Non mostrare JSON.`
+                : `Result of tool ${call.tool}:\n${toolResult.data ?? "(no data)"}\n\nAnswer my previous request in English, naturally and concisely, using ONLY this data. Do not show JSON.`,
+          },
+        ];
+        const followup = await generate(
+          followupMessages,
+          { maxTokens: 1024, temperature: 0.4 },
+          onToken,
+        );
+        // Guard: if the model answered with a tool-call JSON instead of prose
+        // (it shouldn't, but the system prompt still allows JSON), don't dump
+        // raw JSON at the user — fall back to a plain message.
+        const answer =
+          parseResponse(followup.text) || looksLikeToolAttempt(followup.text)
+            ? lang === "it"
+              ? "Ho recuperato i dati ma non sono riuscito a formulare una risposta. Riprova."
+              : "I fetched the data but couldn't phrase an answer. Please try again."
+            : followup.text;
+        return { type: "text", content: answer };
+      }
+
+      const confirmMessage = call.message || (lang === "it" ? "Fatto!" : "Done!");
+      if (toolRequiresConfirmation(call.tool, confirmEnabled)) {
+        // Don't touch the device yet — hand the proposed action to the UI for
+        // explicit user confirmation. The store dispatches it via executeToolCall.
+        return {
+          type: "pending_tool_call",
+          tool: call.tool,
+          parameters: call.parameters,
+          message: confirmMessage,
+        };
+      }
+      const toolResult = await dispatchToolCall(call.tool, call.parameters, lang);
+      return {
+        type: "tool_call",
+        tool: call.tool,
+        parameters: call.parameters,
+        message: confirmMessage,
+        result: toolResult,
+      };
+    };
+
     // Try to parse as tool call
     const toolCall = parseResponse(raw);
 
     let response: OrchestratorResponse;
 
     if (toolCall) {
-      if (toolReturnsData(toolCall.tool)) {
-        // Read/query tool: run it, then re-generate an answer grounded in the
-        // returned data (a function-calling loop). Never gated — read-only.
-        const toolResult = await dispatchToolCall(
-          toolCall.tool,
-          toolCall.parameters,
-          lang,
-        );
-        if (!toolResult.success) {
-          // e.g. permission denied or no data — surface the reason as text.
-          response = { type: "text", content: toolResult.message };
-        } else {
-          // Clear the streamed tool-call JSON, then stream the real answer.
-          onStreamReset?.();
-          const followupMessages: CompletionMessage[] = [
-            ...messages,
-            { role: "assistant", content: raw },
-            {
-              role: "user",
-              content:
-                lang === "it"
-                  ? `Risultato dello strumento ${toolCall.tool}:\n${toolResult.data ?? "(nessun dato)"}\n\nRispondi alla mia richiesta precedente in italiano, in modo naturale e conciso, usando SOLO questi dati. Non mostrare JSON.`
-                  : `Result of tool ${toolCall.tool}:\n${toolResult.data ?? "(no data)"}\n\nAnswer my previous request in English, naturally and concisely, using ONLY this data. Do not show JSON.`,
-            },
-          ];
-          const followup = await generate(
-            followupMessages,
-            { maxTokens: 1024, temperature: 0.4 },
-            onToken,
-          );
-          // Guard: if the model answered with a tool-call JSON instead of prose
-          // (it shouldn't, but the system prompt still allows JSON), don't dump
-          // raw JSON at the user — fall back to a plain message.
-          const answer =
-            parseResponse(followup.text) || looksLikeToolAttempt(followup.text)
-              ? lang === "it"
-                ? "Ho recuperato i dati ma non sono riuscito a formulare una risposta. Riprova."
-                : "I fetched the data but couldn't phrase an answer. Please try again."
-              : followup.text;
-          response = { type: "text", content: answer };
-        }
+      response = await handleToolCall(toolCall, raw);
+    } else if (looksLikeToolAttempt(raw)) {
+      // The model tried to emit a tool call but it didn't parse — malformed or
+      // truncated. Per the Fase 2 exit gate, retry ONCE with a correction prompt
+      // demanding valid JSON only; if it still fails, degrade gracefully instead
+      // of dumping raw partial JSON at the user (ORCH-8).
+      const truncatedHint =
+        lang === "it"
+          ? "Non sono riuscito a completare quell'azione (risposta troncata). Riprova, magari riformulando."
+          : "I couldn't complete that action (the response was cut off). Please try again, perhaps rephrasing.";
+
+      if (result.stoppedByUser) {
+        // The user tapped Stop mid-stream — don't launch a fresh generation they
+        // just asked to cancel; show the hint (matches the pre-retry behavior).
+        response = { type: "text", content: truncatedHint };
       } else {
-        const confirmMessage =
-          toolCall.message || (lang === "it" ? "Fatto!" : "Done!");
-        if (toolRequiresConfirmation(toolCall.tool, confirmEnabled)) {
-          // Don't touch the device yet — hand the proposed action to the UI for
-          // explicit user confirmation. The store dispatches it via executeToolCall.
-          response = {
-            type: "pending_tool_call",
-            tool: toolCall.tool,
-            parameters: toolCall.parameters,
-            message: confirmMessage,
-          };
+        onStreamReset?.();
+        const correction: CompletionMessage[] = [
+          ...messages,
+          // Cap the (possibly runaway/repetitive) bad output so it can't dominate
+          // the retry context or re-seed the same degenerate pattern.
+          { role: "assistant", content: raw.slice(0, 800) },
+          {
+            role: "user",
+            content:
+              lang === "it"
+                ? "La tua risposta precedente non era un JSON valido. Rispondi di nuovo con SOLO l'oggetto JSON dello strumento, senza testo, senza spiegazioni e senza blocchi di codice."
+                : "Your previous reply was not valid JSON. Reply again with ONLY the tool JSON object — no prose, no explanation, no code fence.",
+          },
+        ];
+        // Silent correction pass (no onToken): don't stream a second raw-JSON
+        // attempt at the user; the first streamed attempt was cleared above. A
+        // tool-call JSON is short, so a tight token cap keeps the wait small.
+        const retry = await generate(correction, {
+          maxTokens: 512,
+          temperature: 0.2,
+        });
+        if (retry.stoppedByUser) {
+          response = { type: "text", content: truncatedHint };
         } else {
-          const toolResult = await dispatchToolCall(
-            toolCall.tool,
-            toolCall.parameters,
-            lang,
-          );
-          response = {
-            type: "tool_call",
-            tool: toolCall.tool,
-            parameters: toolCall.parameters,
-            message: confirmMessage,
-            result: toolResult,
-          };
+          const retryToolCall = parseResponse(retry.text);
+          if (retryToolCall) {
+            response = await handleToolCall(retryToolCall, retry.text);
+          } else if (
+            stripThinkTags(retry.text).trim() &&
+            !looksLikeToolAttempt(retry.text)
+          ) {
+            // Retry produced usable prose — fall back to general chat.
+            response = { type: "text", content: retry.text };
+          } else {
+            // Still a broken or empty tool attempt — show the clean hint.
+            response = { type: "text", content: truncatedHint };
+          }
         }
       }
-    } else if (looksLikeToolAttempt(raw)) {
-      // The model tried to emit a tool call but it didn't parse — almost always
-      // truncated by the token limit. Show a clean retry hint instead of dumping
-      // raw partial JSON like `{"tool":"set_alarm","parameters":{...` (ORCH-8).
-      response = {
-        type: "text",
-        content:
-          lang === "it"
-            ? "Non sono riuscito a completare quell'azione (risposta troncata). Riprova, magari riformulando."
-            : "I couldn't complete that action (the response was cut off). Please try again, perhaps rephrasing.",
-      };
     } else {
       // Plain text response — keep think tags for styled UI rendering
       response = { type: "text", content: raw };
