@@ -15,6 +15,7 @@ import {
   UnsupportedDocumentError,
   DocumentParseError,
 } from "./parse-util";
+import { installPdfPolyfills } from "./pdf-polyfills";
 
 export {
   classifyDocument,
@@ -62,6 +63,10 @@ async function parsePdf(uri: string): Promise<string> {
       encoding: FileSystem.EncodingType.Base64,
     });
     const data = base64ToBytes(b64);
+
+    // Install DOM polyfills BEFORE importing pdfjs — it reads browser globals at
+    // module-load time and would otherwise throw uncatchably under Hermes.
+    installPdfPolyfills();
 
     // Lazy-load pdfjs so its bulk + Hermes quirks never touch app boot.
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
