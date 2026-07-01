@@ -19,6 +19,13 @@ import {
 } from "../lib/orchestrator/knowledge-manager";
 import { getConfig, setConfig } from "../lib/storage/database";
 import type { KnowledgeFile } from "../lib/storage/database";
+import { useModelStore } from "../lib/store/model-store";
+import {
+  getPerfSettings,
+  setPerfSettings,
+  DEFAULT_PERF,
+  type PerfSettings,
+} from "../lib/llm/perf-config";
 import { colors, spacing, radii, typography } from "../lib/theme";
 import type { Language } from "../lib/orchestrator/types";
 
@@ -47,6 +54,30 @@ export default function SettingsScreen() {
   const toggleConfirmActions = (value: boolean) => {
     setConfirmActions(value);
     setConfig("confirm_destructive_actions", value ? "true" : "false").catch(() => {});
+  };
+
+  const reloadActive = useModelStore((s) => s.reloadActive);
+  const [perf, setPerf] = useState<PerfSettings>(DEFAULT_PERF);
+  const [perfBusy, setPerfBusy] = useState(false);
+
+  useEffect(() => {
+    getPerfSettings().then(setPerf).catch(() => {});
+  }, []);
+
+  // Persist a perf change, then reload the model so it takes effect.
+  const updatePerf = async (next: PerfSettings) => {
+    const prev = perf;
+    setPerf(next);
+    setPerfBusy(true);
+    try {
+      await setPerfSettings(next);
+      await reloadActive();
+    } catch (e) {
+      setPerf(prev); // revert on failure (e.g. a KV-quant combo the model rejects)
+      Alert.alert("Performance", e instanceof Error ? e.message : String(e));
+    } finally {
+      setPerfBusy(false);
+    }
   };
 
   const refreshKnowledgeFiles = useCallback(async () => {
@@ -240,6 +271,76 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Performance section */}
+      <Text style={styles.sectionTitle}>Performance</Text>
+      <View style={styles.card}>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleInfo}>
+            <Text style={styles.toggleTitle}>CPU threads</Text>
+            <Text style={styles.toggleHint}>
+              More threads can speed up generation on multi-core phones.
+            </Text>
+          </View>
+          <View style={styles.stepperRow}>
+            <TouchableOpacity
+              style={styles.stepperBtn}
+              disabled={perfBusy || perf.threads <= 1}
+              onPress={() =>
+                updatePerf({ ...perf, threads: Math.max(1, perf.threads - 1) })
+              }
+              activeOpacity={0.7}
+            >
+              <Text style={styles.stepperText}>−</Text>
+            </TouchableOpacity>
+            <Text style={styles.stepperValue}>{perf.threads}</Text>
+            <TouchableOpacity
+              style={styles.stepperBtn}
+              disabled={perfBusy || perf.threads >= 8}
+              onPress={() =>
+                updatePerf({ ...perf, threads: Math.min(8, perf.threads + 1) })
+              }
+              activeOpacity={0.7}
+            >
+              <Text style={styles.stepperText}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleInfo}>
+            <Text style={styles.toggleTitle}>Quantize KV cache (q8_0)</Text>
+            <Text style={styles.toggleHint}>
+              Halves context memory so longer chats fit. Small quality cost.
+            </Text>
+          </View>
+          <Switch
+            value={perf.kvQuant}
+            onValueChange={(v) => updatePerf({ ...perf, kvQuant: v })}
+            disabled={perfBusy}
+            trackColor={{ false: colors.disabled, true: colors.accent }}
+          />
+        </View>
+
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleInfo}>
+            <Text style={styles.toggleTitle}>Keep model in RAM (mlock)</Text>
+            <Text style={styles.toggleHint}>
+              Pins weights so Android cannot page them out. Faster, more RAM.
+            </Text>
+          </View>
+          <Switch
+            value={perf.useMlock}
+            onValueChange={(v) => updatePerf({ ...perf, useMlock: v })}
+            disabled={perfBusy}
+            trackColor={{ false: colors.disabled, true: colors.accent }}
+          />
+        </View>
+
+        {perfBusy && (
+          <Text style={styles.toggleHint}>Reloading model to apply…</Text>
+        )}
+      </View>
+
       {/* About section */}
       <Text style={styles.sectionTitle}>About</Text>
       <View style={styles.card}>
@@ -342,6 +443,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
     lineHeight: 18,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  stepperBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: colors.accentMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperText: {
+    fontSize: 20,
+    color: colors.accent,
+    fontWeight: "600",
+  },
+  stepperValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    minWidth: 16,
+    textAlign: "center",
   },
   // File
   fileRow: {
