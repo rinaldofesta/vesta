@@ -27,6 +27,9 @@ export interface CompletionResult {
     predictedPerSecond: number;
   };
   stoppedByLimit: boolean;
+  // True when this completion ended because the user tapped Stop (vs. a natural
+  // finish or token-limit). Lets callers avoid follow-up work after a stop.
+  stoppedByUser: boolean;
 }
 
 const DEFAULT_OPTIONS: Required<
@@ -73,6 +76,9 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 
 let context: LlamaContext | null = null;
 let currentModelPath: string | null = null;
+// Set by stopGeneration(), read+cleared by the active generate(). Distinguishes a
+// user-initiated Stop from a natural finish (the native layer exposes no such flag).
+let stopRequested = false;
 
 export function getModelInfo(): ModelInfo {
   return {
@@ -157,6 +163,8 @@ export function generate(
     if (!context) throw new Error("No model loaded");
 
     const opts = { ...DEFAULT_GENERATE, ...options };
+    // Fresh turn: clear any stale stop request so it can't leak across turns.
+    stopRequested = false;
 
     const llamaMessages: RNLlamaOAICompatibleMessage[] = messages.map((m) => ({
       role: m.role,
@@ -197,11 +205,16 @@ export function generate(
         predictedPerSecond: result.timings.predicted_per_second,
       },
       stoppedByLimit: result.stopped_limit > 0,
+      stoppedByUser: stopRequested,
     };
   });
 }
 
 export function stopGeneration(): Promise<void> {
+  // Record the user's intent so the active generate() reports stoppedByUser and
+  // callers (e.g. the orchestrator's malformed-JSON retry) can avoid launching
+  // follow-up work the user just asked to cancel.
+  stopRequested = true;
   // stopCompletion is safe to call outside the lock (it signals the native layer).
   // It's a JSI call typed Promise<void> but can return undefined at runtime, so
   // wrap in Promise.resolve to guarantee callers always get a thenable.

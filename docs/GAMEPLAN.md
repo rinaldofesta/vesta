@@ -173,6 +173,7 @@ Track key decisions here as you make them during development.
 | 2026-03-08 | MCP server in Fase 6 | Levie's "API-first for agents" thesis. Vesta as local agent infra. |
 | 2026-06-25 | Fase 1 complete | Android MVP exit gate met on real hardware: end-to-end alarm/event/reminder fully offline. |
 | 2026-06-25 | Fase 2 code-complete | All 10 tools (calls, SMS, contacts, calendar read) + query loop + error recovery shipped across PRs #11–#13, CI-verified (typecheck/lint/tests/Android build). On-device verification of the new contacts/calendar tools is pending a rebuild; the exit-gate scenario ("che appuntamenti ho domani?" reading real calendar data) has not yet been run on hardware. |
+| 2026-07-01 | Fase 2 complete (verified on device) | Rebuilt on a Pixel 10 Pro after fixing an autolinking gap (expo-contacts/expo-calendar were not compiled into the APK, crashing boot). Exit gate met on hardware, fully offline: "che appuntamenti ho domani?" reads real calendar data; timer, contact search, and confirm-gated calls also verified on device. Added the missing malformed-JSON retry-once-with-correction (GAMEPLAN Fase 2 error-handling requirement). |
 
 ---
 

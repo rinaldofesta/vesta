@@ -19,7 +19,7 @@
   <a href="#"><img src="https://img.shields.io/badge/language-TypeScript-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/offline-first-C07A56.svg" alt="Offline First" /></a>
   <a href="#"><img src="https://img.shields.io/badge/LLM-on--device-8B5CF6.svg" alt="On-device LLM" /></a>
-  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(Fase%201)-orange.svg" alt="Early / Fase 1" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(Fase%202)-orange.svg" alt="Early / Fase 2" /></a>
 </p>
 
 ---
@@ -73,7 +73,7 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 
 ## Status
 
-Vesta is **early and under active development** (Fase 2 — Core Polish shipped). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The chat-and-alarm core is verified on real hardware; the new Fase 2 tools (timer, navigation, contacts, calls, SMS, calendar read) are shipped and CI-verified, with on-device verification still pending. Next up: Fase 3 — Document Intelligence (RAG). Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
+Vesta is **early and under active development** (Fase 2 — Core Polish complete). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The core is verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, and contact search run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Next up: Fase 3 — Document Intelligence (RAG). Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
@@ -208,7 +208,7 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 |-------|:---:|-------------|
 | **Fase 0** — Model Validation | ✅ Done | Benchmark models, validate architecture, finalize system prompt |
 | **Fase 1** — Android MVP | ✅ Done | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
-| **Fase 2** — Core Polish | 🚧 Shipped | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, error recovery — CI-verified; new tools pending on-device check |
+| **Fase 2** — Core Polish | ✅ Done | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, malformed-JSON retry — verified on a Pixel 10 Pro, fully offline |
 | **Fase 3** — Document Intelligence | 📋 Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
 | **Fase 4** — Mac Hub | 📋 Planned | Optional LAN hub delegating heavy queries to a 70B model |
 | **Fase 5** — iOS Port | 📋 Planned | MLX-Swift inference, App Intents for actions |
