@@ -49,8 +49,11 @@ const PROMPTS_FILE = join(__dirname, "prompts.jsonl");
 const RESULTS_DIR = join(__dirname, "results");
 const OLLAMA_URL = "http://localhost:11434";
 
-// Current datetime for system prompt (simulating "now" for benchmark)
-const CURRENT_DATETIME = "2026-03-08T14:30:00";
+// Current datetime for system prompt (simulating "now" for benchmark).
+// Minute precision, mirroring the production volatile tail: the mobile
+// formatDatetime deliberately omits seconds (KV-cache reuse), so the benchmark
+// must exercise the same prompt shape the device ships.
+const CURRENT_DATETIME = "2026-03-08T14:30";
 const TIMEZONE = "Europe/Rome";
 
 // ---------------------------------------------------------------------------

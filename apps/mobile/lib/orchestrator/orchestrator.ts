@@ -257,12 +257,15 @@ export async function processMessage(
     // can't yield a useful fact (tool-call confirmations, greetings/acks). This
     // avoids a second full LLM pass that, because the engine serializes all
     // generation, would otherwise stall the user's next message (ORCH-1).
+    // Pass this turn's message list: extraction appends its request to the chat
+    // context so it reuses (and preserves) the cached prompt prefix instead of
+    // evicting it with a standalone prompt — see extractMemories (REV-1).
     const isToolTurn =
       response.type === "tool_call" || response.type === "pending_tool_call";
     if (shouldExtractMemory(userText, isToolTurn)) {
       const assistantContent =
         response.type === "text" ? stripThinkTags(response.content) : response.message;
-      extractMemories(userText, assistantContent, "", lang).catch((err) => {
+      extractMemories(messages, assistantContent, "", lang).catch((err) => {
         console.warn("[Orchestrator] Memory extraction failed:", err);
       });
     }

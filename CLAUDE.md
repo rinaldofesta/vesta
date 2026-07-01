@@ -36,7 +36,7 @@ Local Storage
   └─ .gguf model files
 ```
 
-**Optional:** Vesta Hearth (Mac Hub) — Node.js + Ollama + WebSocket on Mac, auto-discovered via mDNS on LAN. Delegates heavy queries to 70B model. Phone works 100% without it.
+**Optional (parked):** Vesta Hearth (Mac Hub) — Node.js + Ollama + WebSocket on Mac, auto-discovered via mDNS on LAN. Delegates heavy queries to 70B model. Phone works 100% without it. Parked with the iOS port under the Android-first re-scope (see GAMEPLAN.md).
 
 ---
 
@@ -51,7 +51,7 @@ Local Storage
 | DB | SQLite (expo-sqlite) | Native, zero config |
 | Vector DB | sqlite-vec | 100KB, no dependencies |
 | Embedding | llama.cpp (nomic-embed-text) | Same runtime as LLM |
-| Mac Hub | Node.js + Ollama + ws | Optional boost |
+| Mac Hub | Node.js + Ollama + ws | Optional boost (parked) |
 
 ---
 
@@ -63,7 +63,7 @@ Local Storage
 | Qwen3 8B (Q4_K_M) | Primary on tablet | ~5.5 GB | ~10-18 tok/s |
 | FunctionGemma 270M | Fast router (optional) | ~0.2 GB | ~100+ tok/s |
 | nomic-embed-text | Embedding for RAG | ~0.3 GB | batch mode |
-| Llama 3.1 70B (Q6) | Mac Hub workhorse | ~55 GB | ~15-22 tok/s |
+| Llama 3.1 70B (Q6) | Mac Hub workhorse (parked) | ~55 GB | ~15-22 tok/s |
 
 ---
 
@@ -105,7 +105,7 @@ Check GAMEPLAN.md for current phase and exit gate.
 
 ## Key Constraints
 
-- **Offline-first**: every feature MUST work without internet. Mac Hub is optional boost.
+- **Offline-first**: every feature MUST work without internet. Mac Hub is optional boost (parked).
 - **Single LLM runtime**: llama.cpp for inference AND embedding. No ONNX, no MLC, no second runtime.
 - **Minimal native**: Kotlin/C++ ONLY for llama.cpp bridge, Android Intents, Foreground Service. Everything else in TypeScript.
 - **MVP mindset**: don't build features not in the current phase. Check GAMEPLAN.md for what's in scope.
@@ -126,7 +126,7 @@ vesta/
 │   │   │   └── storage/           # SQLite wrapper (TS)
 │   │   └── native/
 │   │       └── android/           # Kotlin: LlamaCppModule, SystemActionsModule, VestaService
-│   └── mac-hub/                   # Node.js server (Fase 4)
+│   └── mac-hub/                   # Node.js server (parked — not yet created; see GAMEPLAN)
 ├── scripts/
 │   └── benchmark/                 # Fase 0 benchmark
 ├── docs/
@@ -170,10 +170,12 @@ That's it for MVP. More tables (documents, memories, scheduled_tasks) are added 
 
 ## System Prompt Template
 
+**Source of truth: `apps/mobile/lib/orchestrator/prompt-builder.ts`.** Since Fase 4 the prompt is split into a STABLE PREFIX and a VOLATILE TAIL for llama.rn KV-cache reuse. The prefix MUST stay byte-stable across turns: never interpolate the date, time, or anything else per-turn above the tool-schema block — a single changed token there re-prefills the whole prompt (~17s measured on device).
+
 ```
+┌─ STABLE PREFIX (byte-identical across turns) ─────────────────
 You are Vesta, a personal assistant running locally on the user's device.
 You respond in {{language}}.
-Current date and time: {{datetime}} ({{timezone}})
 
 When the user asks you to perform an action, respond ONLY with valid JSON:
 {
@@ -186,10 +188,9 @@ When the user asks a question or wants to chat, respond normally in text.
 
 RULES:
 - Times must be in HH:MM format (e.g., "07:30")
-- Dates must be in ISO 8601 format (e.g., "2026-03-12T15:00:00")
-- "Tomorrow" means {{tomorrow_date}}
-- "Tonight" means today between 18:00 and 23:00
-- If a parameter is ambiguous, ask the user for clarification
+- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS" (take the actual date from the current date context below)
+- "Tonight" means today, from 19:00 if no time given. "Late tonight" means today after 23:00 or tomorrow before 06:00
+- If a REQUIRED parameter is ambiguous, ask the user for clarification
 - Never make up information you don't have
 
 Available tools:
@@ -197,6 +198,14 @@ Available tools:
 {{tool_schemas}}
 
 If the request doesn't match any tool, respond as general conversation.
+
+{{memories_section}}      ← semi-stable: changes only when memories change
+{{knowledge_section}}     ← semi-stable: changes only when files change
+└───────────────────────────────────────────────────────────────
+┌─ VOLATILE TAIL (rebuilt every turn — keep it small, keep it last) ─
+Current date context:
+Date and time: {{datetime_minute_precision}} ({{timezone}}). Today is {{day_of_week}}, {{today}}. Tomorrow is {{tomorrow}}.
+└───────────────────────────────────────────────────────────────
 ```
 
 ---

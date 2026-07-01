@@ -3,7 +3,12 @@
 // Runs asynchronously after each assistant response (fire-and-forget).
 
 import { v4 as uuid } from "uuid";
-import { generate, isLoaded, stopGeneration } from "../llm/llm-engine";
+import {
+  generate,
+  isLoaded,
+  stopGeneration,
+  getContextSize,
+} from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
 import {
   saveMemory,
@@ -43,6 +48,19 @@ let extractionRunning = false;
 // the engine lock is released promptly instead of blocking the user's message.
 let extractionAbort = false;
 const EXTRACTION_TIMEOUT_MS = 30_000;
+const EXTRACTION_MAX_TOKENS = 256;
+// Rough token estimate (~3 chars/token is conservative for Italian/English
+// BPE) plus per-message chat-template overhead. Only used to decide whether
+// the extraction turn fits the context window — precision doesn't matter.
+const TEMPLATE_TOKENS_PER_MESSAGE = 8;
+const CONTEXT_SAFETY_MARGIN = 128;
+
+function estimatePromptTokens(messages: CompletionMessage[]): number {
+  return messages.reduce(
+    (n, m) => n + Math.ceil(m.content.length / 3) + TEMPLATE_TOKENS_PER_MESSAGE,
+    0,
+  );
+}
 
 /**
  * Cancel an in-flight extraction so the user's next message isn't queued
@@ -60,9 +78,18 @@ export function cancelExtraction(): void {
  * Cancellable: processMessage calls cancelExtraction() so a user turn never
  * waits for a background extraction to finish. Includes a timeout that stops
  * the generation (not just the guard) if the LLM hangs.
+ *
+ * Takes the chat turn's own message list and appends the extraction request as
+ * one more turn instead of using a standalone extraction prompt. This is a
+ * KV-cache requirement, not a convenience: the engine has a single context,
+ * and a completion only reuses the cache for its common token prefix with the
+ * previous one. A standalone prompt shares no prefix with the chat, so it
+ * evicted the cached system-prompt/tool-schema block and the NEXT user turn
+ * re-prefilled it cold (~17s measured on device). Sharing the chat prefix
+ * makes extraction itself a cheap append AND leaves the chat prefix cached.
  */
 export async function extractMemories(
-  userText: string,
+  chatMessages: CompletionMessage[],
   assistantText: string,
   messageId: string,
   lang: Language,
@@ -71,37 +98,60 @@ export async function extractMemories(
   extractionRunning = true;
   extractionAbort = false;
 
+  // Guards ONLY the LLM call and is disarmed the moment it returns: firing
+  // later would stopGeneration() an unrelated completion — after the engine
+  // lock releases, the "current generation" may be the user's next message.
+  let generationDone = false;
   const timeoutId = setTimeout(() => {
+    if (generationDone) return;
     console.warn("[MemoryManager] Extraction timed out, stopping generation");
     extractionAbort = true;
     stopGeneration().catch(() => {});
   }, EXTRACTION_TIMEOUT_MS);
 
   try {
-    const systemPrompt =
+    const instruction =
       lang === "it"
-        ? `Estrai fatti personali dall'utente in questa conversazione. Ritorna SOLO un array JSON valido.
+        ? `Estrai i fatti personali NUOVI che l'utente ha dichiarato nel suo ULTIMO messaggio qui sopra.
+Rispondi con SOLO un array JSON valido di oggetti {"category": "...", "content": "..."} — niente testo, niente spiegazioni.
 Categorie valide: preference, fact, routine, contact_note, topic_interest
-Se non ci sono nuovi fatti, ritorna []
-Non inventare nulla. Estrai SOLO informazioni esplicitamente dette dall'utente.`
-        : `Extract personal facts about the user from this conversation. Return ONLY a valid JSON array.
+Ignora le sezioni "Cosa sai dell'utente" e "Contesto personale dell'utente": sono informazioni già note, non estrarle di nuovo.
+Se non ci sono fatti nuovi, rispondi []
+Non inventare nulla. Estrai SOLO informazioni esplicitamente dette dall'utente nel suo ultimo messaggio.`
+        : `Extract the NEW personal facts the user stated in their LAST message above.
+Reply with ONLY a valid JSON array of {"category": "...", "content": "..."} objects — no prose, no explanation.
 Valid categories: preference, fact, routine, contact_note, topic_interest
-If no new facts, return []
-Do not invent anything. Extract ONLY information explicitly stated by the user.`;
-
-    const conversationSnippet = `User: ${userText}\nAssistant: ${assistantText}`;
+Ignore the "What you know about the user" and "User's personal context" sections — they are already known, do not extract them again.
+If there are no new facts, reply []
+Do not invent anything. Extract ONLY information the user explicitly stated in their last message.`;
 
     const messages: CompletionMessage[] = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: conversationSnippet },
+      ...chatMessages,
+      { role: "assistant", content: assistantText },
+      { role: "user", content: instruction },
     ];
+
+    // Skip when the extraction turn wouldn't fit the context window: pushing
+    // past n_ctx triggers ctx_shift, which rolls the oldest tokens — the very
+    // system-prompt/tool-schema prefix this prefix-sharing design keeps cached
+    // — out of the KV cache. Skipping a best-effort background pass is cheaper
+    // than evicting the prefix (and a shifted cache would also degrade the
+    // extraction itself).
+    const budget =
+      getContextSize() - EXTRACTION_MAX_TOKENS - CONTEXT_SAFETY_MARGIN;
+    if (estimatePromptTokens(messages) > budget) {
+      console.log(
+        "[MemoryManager] Skipping extraction: conversation too close to the context limit",
+      );
+      return;
+    }
 
     // Extraction emits a tiny JSON array — thinking is pure waste here, and a
     // small token cap keeps this background pass short on a phone (LLM-4).
     const result = await generate(
       messages,
       {
-        maxTokens: 256,
+        maxTokens: EXTRACTION_MAX_TOKENS,
         temperature: 0.1,
         enableThinking: false,
       },
@@ -111,6 +161,10 @@ Do not invent anything. Extract ONLY information explicitly stated by the user.`
         if (extractionAbort) stopGeneration().catch(() => {});
       },
     );
+    // Disarm the timeout immediately: from here on there is nothing left to
+    // stop, and the next completion the engine runs may be the user's.
+    generationDone = true;
+    clearTimeout(timeoutId);
 
     const raw = stripThinkTags(result.text);
     const extracted = parseExtractionResult(raw);

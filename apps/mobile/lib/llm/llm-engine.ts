@@ -76,6 +76,7 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 
 let context: LlamaContext | null = null;
 let currentModelPath: string | null = null;
+let currentContextSize: number = DEFAULT_OPTIONS.contextSize;
 // Set by stopGeneration(), read+cleared by the active generate(). Distinguishes a
 // user-initiated Stop from a natural finish (the native layer exposes no such flag).
 let stopRequested = false;
@@ -89,6 +90,13 @@ export function getModelInfo(): ModelInfo {
 
 export function isLoaded(): boolean {
   return context !== null;
+}
+
+// Context window (n_ctx) of the loaded model. Callers sizing optional
+// background work (e.g. memory extraction) use this to avoid pushing past
+// n_ctx, where ctx_shift would evict the cached prompt prefix.
+export function getContextSize(): number {
+  return currentContextSize;
 }
 
 export function loadModel(
@@ -107,6 +115,7 @@ export function loadModel(
     }
 
     const opts = { ...DEFAULT_OPTIONS, ...options };
+    currentContextSize = opts.contextSize;
     context = await initLlama(
       {
         model: modelPath,

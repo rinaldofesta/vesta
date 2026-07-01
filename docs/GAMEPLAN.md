@@ -109,31 +109,36 @@
 
 ---
 
-## Fase 4: Mac Hub — Vesta Hearth (Week 11-13)
+## Fase 4: On-device Performance
 
-**Goal:** Phone auto-discovers Mac on LAN, delegates heavy tasks, falls back gracefully.
+**Goal:** Make Vesta faster on the phone — shorter time-to-first-token and lower battery — without a second device.
+
+**Context (spike):** llama.rn already reuses the KV cache in-memory across completions that share a prefix (measured prefill 17s → 0ms on a repeated prompt on a Pixel 10 Pro). So the win is *not* a persistent cache for normal chat — it's keeping the big, stable prompt prefix cacheable and shaving the cold-start cost.
 
 **What you build:**
-- Mac server: Node.js + Express + WebSocket + Ollama client + mDNS advertisement
-- Phone client: WebSocket connection + mDNS scan (via react-native-zeroconf)
-- Protocol: CHAT, EMBED, STREAM_START/CHUNK/END, PING/PONG
-- Connection manager in orchestrator: if Hub connected → delegate. If not → process locally.
-- UI indicator: 🟢 "Vesta Hearth connected" / 📱 "Local mode"
+- **Prompt restructuring** (biggest win): the volatile datetime sat near the top of the system prompt, invalidating the KV cache for the whole tool-schema block every turn. New layout: a STABLE prefix — persona + format + static date-interpretation rules + tool schemas, with semi-stable memories/knowledge at its end — and a VOLATILE tail holding only the current date context (datetime at minute precision, today/tomorrow).
+  - *Benchmark re-run (2026-07-01, Ollama qwen3:4b, easy+medium):* thinking config **98.9% tool / 100% JSON** vs the 97.8%/98.9% March baseline — **gate holds, slightly improved**. No-think config 92.2%/93.3% vs its 93.3%/94.4% baseline — within run-to-run noise (temperature 0.1, unseeded; the misses are that config's known empty-response truncation flakes, present in the baseline too). No response in any run copied the `"YYYY-MM-DDTHH:MM:SS"` format placeholder. Caveat: the benchmark covers the 4-tool MVP subset, not the 5 post-MVP routing rules (Fase 2/3), so on-device spot checks of the other tools are still needed.
+- **Cheap wins**: user-tunable CPU threads, KV-cache quantization (q8_0), and mlock, in Settings, applied at model load.
+- **Persistent prefix-KV cache** (narrow, cold-start only): save/restore the stable-prefix KV across app restarts via llama.rn `saveSession`/`loadSession`, so the first message after launch doesn't pay the cold prefill. Disk budget + hit-decay eviction.
+- **Benchmark**: prefill latency + tok/s on device, before/after.
 
-**Exit gate:** Phone on same WiFi as Mac → auto-connects. Ask complex question → answered by 70B model on Mac. Disconnect WiFi → same question answered by local 4B model. Transparent to user.
+**Known limitation / future work:** the volatile date context still lives at the end of the system prompt, so conversation history after it re-prefills whenever the minute changes between turns. Datetime is minute-precision, so same-minute turns are pure appends; the full fix (per-turn date injection replayed byte-identically in history) is deferred.
 
----
-
-## Fase 5: iOS Port (Week 14-17)
-
-- MLX-Swift native module for inference
-- App Intents framework for system actions (alarm, calendar, contacts)
-- Same React Native UI, different native bridge
-- **Exit gate:** Same demo ("svegliami alle 7") works on iPhone.
+**Exit gate:** Measurable prefill-latency reduction on repeated prompts on a real device, with no tool-accuracy regression (Fase 0 benchmark holds).
 
 ---
 
-## Fase 6: MCP + Advanced (Week 18+)
+## Parked — Mac Hub & iOS (Android-first focus)
+
+Deferred while the focus is a great single-device Android experience:
+- **Mac Hub (Vesta Hearth)**: optional LAN hub delegating heavy queries to a 70B model on a Mac (Node + WebSocket + mDNS, with graceful local fallback).
+- **iOS Port**: MLX-Swift inference + App Intents, same RN UI.
+
+Both remain on the long-term roadmap; neither is a current priority.
+
+---
+
+## Fase 5: MCP + Advanced (future)
 
 **MCP (Model Context Protocol) is the strategic play.**
 
@@ -149,7 +154,7 @@ This is a massive positioning upgrade: from "offline assistant" to "the local ag
 - Authentication: user approves which external agents can use Vesta (consent-based)
 - Use case: Claude Code asks Vesta to "check my calendar for tomorrow" → Vesta reads local calendar → returns data → Claude Code uses it in its workflow. All without the calendar data ever leaving the device.
 
-**Other Fase 6 candidates:**
+**Other Fase 5 candidates:**
 - Interactive tutor (study plans, quizzes, Socratic mode)
 - Multi-agent swarm (specialized agents collaborating)
 - Accessibility Service (Android, opt-in, sideload only — NOT for Play Store)
@@ -170,7 +175,7 @@ Track key decisions here as you make them during development.
 | 2026-03-08 | llama.cpp as sole runtime | Official Android binding, any GGUF, no recompilation. |
 | 2026-03-08 | React Native + minimal Kotlin | Developer is TS-native. Kotlin only for 3 native modules. |
 | 2026-03-08 | English + Italian from day 1 | Global product, Italian stress-test. Tier 2 langs at month 3-6. |
-| 2026-03-08 | MCP server in Fase 6 | Levie's "API-first for agents" thesis. Vesta as local agent infra. |
+| 2026-03-08 | MCP server in Fase 6 (now Fase 5) | Levie's "API-first for agents" thesis. Vesta as local agent infra. |
 | 2026-06-25 | Fase 1 complete | Android MVP exit gate met on real hardware: end-to-end alarm/event/reminder fully offline. |
 | 2026-06-25 | Fase 2 code-complete | All 10 tools (calls, SMS, contacts, calendar read) + query loop + error recovery shipped across PRs #11–#13, CI-verified (typecheck/lint/tests/Android build). On-device verification of the new contacts/calendar tools is pending a rebuild; the exit-gate scenario ("che appuntamenti ho domani?" reading real calendar data) has not yet been run on hardware. |
 | 2026-07-01 | Fase 2 complete (verified on device) | Rebuilt on a Pixel 10 Pro after fixing an autolinking gap (expo-contacts/expo-calendar were not compiled into the APK, crashing boot). Exit gate met on hardware, fully offline: "che appuntamenti ho domani?" reads real calendar data; timer, contact search, and confirm-gated calls also verified on device. Added the missing malformed-JSON retry-once-with-correction (GAMEPLAN Fase 2 error-handling requirement). |
