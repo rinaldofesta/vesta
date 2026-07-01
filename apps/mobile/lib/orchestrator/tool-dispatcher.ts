@@ -8,6 +8,7 @@ import { scheduleReminder } from "../native/reminders";
 import { searchContacts } from "../native/contacts";
 import { makeCall, sendSms } from "../native/communication";
 import { getCalendarEvents } from "../native/calendar";
+import { queryDocuments } from "./document-retriever";
 import { isValidYMD } from "./date-utils";
 
 const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
@@ -123,6 +124,9 @@ export async function dispatchToolCall(
 
       case "get_calendar_events":
         return await getCalendarEvents(parameters.date as string, lang);
+
+      case "query_document":
+        return await queryDocuments(parameters.query as string, lang);
 
       case "general_chat":
         return { success: true, message: "OK" };

@@ -188,6 +188,22 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {/* Documents section */}
+      <Text style={styles.sectionTitle}>Documents</Text>
+      <View style={styles.card}>
+        <Text style={styles.knowledgeDesc}>
+          Import PDFs, Word, or text files and ask Vesta about their contents —
+          indexed and searched on-device (RAG), fully offline.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPrimary, styles.knowledgeAddBtn]}
+          onPress={() => router.push("/documents")}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.btnPrimaryText}>Manage Documents</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Knowledge Files section */}
       <Text style={styles.sectionTitle}>Knowledge Files</Text>
       <View style={styles.card}>

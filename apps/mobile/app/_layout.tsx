@@ -1,9 +1,10 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, AppState } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useChatStore } from "../lib/store/chat-store";
+import { unloadEmbeddingModel } from "../lib/llm/embed-engine";
 import { colors } from "../lib/theme";
 
 export default function RootLayout() {
@@ -14,6 +15,17 @@ export default function RootLayout() {
     init()
       .catch((err) => console.error("Init failed:", err))
       .finally(() => setReady(true));
+  }, []);
+
+  useEffect(() => {
+    // Reclaim the embedding model's RAM when the app is backgrounded; it
+    // lazy-reloads on the next document import/query.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background") {
+        unloadEmbeddingModel().catch(() => {});
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   if (!ready) {
@@ -51,6 +63,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="models"
           options={{ title: "Models" }}
+        />
+        <Stack.Screen
+          name="documents"
+          options={{ title: "Documents" }}
         />
       </Stack>
     </SafeAreaProvider>

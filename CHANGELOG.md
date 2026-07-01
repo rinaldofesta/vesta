@@ -7,6 +7,24 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+Fase 3 — Document Intelligence adds on-device RAG. Import a PDF, Word (.docx),
+text, or Markdown file; Vesta extracts and chunks the text, embeds it with a
+local Nomic model, and answers questions grounded in it via brute-force cosine
+retrieval — all offline. Verified on a Pixel 10 Pro, PDF included.
+
+### Added — Fase 3
+
+- **`query_document` tool** — a read tool that runs through the orchestrator
+  query loop: embed the question, cosine-rank the stored chunk vectors, and
+  answer from the top matches. A relevance floor returns "nothing relevant"
+  instead of confabulating when a question isn't covered by the documents.
+- **Documents screen** — import PDF / DOCX / TXT / MD with per-chunk indexing
+  progress, list, and delete. Parsing via `pdfjs` (PDF, with Hermes DOM
+  polyfills), `jszip` (DOCX), and direct read (TXT/MD). No `sqlite-vec`
+  dependency — vectors are brute-force cosine-scanned in TypeScript.
+- **On-device embeddings** — a second `llama.rn` context runs the Nomic embed
+  model alongside the chat model, and is reclaimed when the app backgrounds.
+
 Fase 2 — Core Polish complete. All 10 core tools and the orchestrator query
 loop are implemented and verified on real hardware (a Pixel 10 Pro): timers,
 calendar read, and contact search run fully offline against real on-device
