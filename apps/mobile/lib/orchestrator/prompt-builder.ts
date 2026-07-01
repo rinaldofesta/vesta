@@ -94,6 +94,7 @@ REGOLE:
 - Usa navigate_to per indicazioni o navigazione verso un luogo (es. "portami a...", "naviga verso...", "come arrivo a...")
 - Usa get_calendar_events per leggere gli appuntamenti del calendario in una data (es. "che appuntamenti ho domani?", "cosa ho in agenda venerdì?")
 - Usa search_contacts per cercare un contatto, make_call per chiamare, send_sms per inviare un messaggio (es. "chiama Mario", "manda un SMS ad Anna")
+- Usa query_document per rispondere a domande sui documenti importati dall'utente (es. "cosa dice il contratto su...", "riassumi il PDF", "cerca nei miei documenti...")
 - "Entro" una data significa impostare il promemoria/evento a quella data
 - Il giorno della settimana (es. "giovedì", "venerdì") si riferisce al PROSSIMO di quel giorno
 - Rispondi SOLO con JSON quando l'utente chiede un'AZIONE (sveglia, evento, promemoria)
@@ -134,6 +135,7 @@ RULES:
 - Use navigate_to for directions or navigation to a place (e.g. "take me to...", "navigate to...", "directions to...")
 - Use get_calendar_events to read calendar appointments for a date (e.g. "what appointments do I have tomorrow?", "what's on my agenda Friday?")
 - Use search_contacts to look up a contact, make_call to call someone, send_sms to text them (e.g. "call Mario", "text Anna")
+- Use query_document to answer questions about the user's imported documents (e.g. "what does the contract say about...", "summarize the PDF", "search my documents for...")
 - "By" a date means set the reminder/event on that date
 - Day of the week (e.g., "Monday", "Thursday") refers to the NEXT occurrence of that day
 - Respond ONLY with JSON when the user asks for an ACTION (alarm, event, reminder)

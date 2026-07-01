@@ -52,6 +52,10 @@ export default function RootLayout() {
           name="models"
           options={{ title: "Models" }}
         />
+        <Stack.Screen
+          name="documents"
+          options={{ title: "Documents" }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

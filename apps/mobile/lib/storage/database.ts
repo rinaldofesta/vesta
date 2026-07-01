@@ -30,6 +30,24 @@ export interface KnowledgeFile {
   createdAt: number;
 }
 
+export interface DocumentRecord {
+  id: string;
+  filename: string;
+  mime: string | null;
+  sizeBytes: number;
+  chunkCount: number;
+  createdAt: number;
+}
+
+// A chunk with its embedding, as needed by the brute-force cosine retriever.
+export interface StoredChunk {
+  id: string;
+  documentId: string;
+  ordinal: number;
+  text: string;
+  embedding: Float32Array;
+}
+
 let db: SQLite.SQLiteDatabase | null = null;
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -62,6 +80,34 @@ const MIGRATIONS: { version: number; sql: string }[] = [
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_models_active ON models(is_active DESC);
+    `,
+  },
+  {
+    // Fase 3 (RAG): imported documents and their embedded chunks. Embeddings are
+    // stored as raw float32 bytes in a BLOB; retrieval is a brute-force cosine
+    // scan in TypeScript (no sqlite-vec — Expo's SQLite can't load extensions).
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        mime TEXT,
+        size_bytes INTEGER DEFAULT 0,
+        chunk_count INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS chunks (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        token_count INTEGER DEFAULT 0,
+        embedding BLOB,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
     `,
   },
 ];
@@ -546,4 +592,125 @@ export async function getKnowledgeFiles(): Promise<KnowledgeFile[]> {
 export async function deleteKnowledgeFile(id: string): Promise<void> {
   const d = await getDatabase();
   await d.runAsync("DELETE FROM knowledge_files WHERE id = ?", id);
+}
+
+// --- Documents & chunks (RAG) ---
+
+// Embeddings persist as raw little-endian float32 bytes in a BLOB column. These
+// helpers copy through fresh buffers so a Float32Array view is always valid,
+// regardless of the source array's byteOffset/alignment.
+function f32ToBytes(vec: Float32Array): Uint8Array {
+  return new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength).slice();
+}
+
+function bytesToF32(bytes: Uint8Array): Float32Array {
+  const copy = bytes.slice(); // fresh, 0-offset buffer → safe Float32Array view
+  return new Float32Array(copy.buffer, 0, Math.floor(copy.byteLength / 4));
+}
+
+export async function saveDocument(doc: {
+  id: string;
+  filename: string;
+  mime?: string | null;
+  sizeBytes: number;
+  chunkCount: number;
+}): Promise<void> {
+  const d = await getDatabase();
+  await d.runAsync(
+    `INSERT OR REPLACE INTO documents (id, filename, mime, size_bytes, chunk_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    doc.id,
+    doc.filename,
+    doc.mime ?? null,
+    doc.sizeBytes,
+    doc.chunkCount,
+    Date.now(),
+  );
+}
+
+export async function saveChunks(
+  chunks: {
+    id: string;
+    documentId: string;
+    ordinal: number;
+    text: string;
+    tokenCount: number;
+    embedding: Float32Array;
+  }[],
+): Promise<void> {
+  if (chunks.length === 0) return;
+  const d = await getDatabase();
+  const now = Date.now();
+  await d.withTransactionAsync(async () => {
+    for (const c of chunks) {
+      await d.runAsync(
+        `INSERT OR REPLACE INTO chunks (id, document_id, ordinal, text, token_count, embedding, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        c.id,
+        c.documentId,
+        c.ordinal,
+        c.text,
+        c.tokenCount,
+        f32ToBytes(c.embedding),
+        now,
+      );
+    }
+  });
+}
+
+export async function getDocuments(): Promise<DocumentRecord[]> {
+  const d = await getDatabase();
+  const rows = await d.getAllAsync<{
+    id: string;
+    filename: string;
+    mime: string | null;
+    size_bytes: number;
+    chunk_count: number;
+    created_at: number;
+  }>(
+    `SELECT id, filename, mime, size_bytes, chunk_count, created_at
+     FROM documents ORDER BY created_at DESC`,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    filename: r.filename,
+    mime: r.mime,
+    sizeBytes: r.size_bytes,
+    chunkCount: r.chunk_count,
+    createdAt: r.created_at,
+  }));
+}
+
+// Deletes a document and its chunks atomically.
+export async function deleteDocument(id: string): Promise<void> {
+  const d = await getDatabase();
+  await d.withTransactionAsync(async () => {
+    await d.runAsync("DELETE FROM chunks WHERE document_id = ?", id);
+    await d.runAsync("DELETE FROM documents WHERE id = ?", id);
+  });
+}
+
+// Loads every embedded chunk for the brute-force cosine retriever. Personal-scale
+// corpora (dozens of docs, a few thousand chunks) fit comfortably in memory.
+export async function getAllChunks(): Promise<StoredChunk[]> {
+  const d = await getDatabase();
+  const rows = await d.getAllAsync<{
+    id: string;
+    document_id: string;
+    ordinal: number;
+    text: string;
+    embedding: Uint8Array | null;
+  }>(`SELECT id, document_id, ordinal, text, embedding FROM chunks`);
+  const out: StoredChunk[] = [];
+  for (const r of rows) {
+    if (!r.embedding) continue;
+    out.push({
+      id: r.id,
+      documentId: r.document_id,
+      ordinal: r.ordinal,
+      text: r.text,
+      embedding: bytesToF32(r.embedding),
+    });
+  }
+  return out;
 }

@@ -212,6 +212,26 @@ export const MVP_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "query_document",
+    description_it:
+      "Cerca informazioni nei documenti importati dall'utente e rispondi in base al loro contenuto",
+    description_en:
+      "Search the user's imported documents and answer from their content",
+    category: "knowledge",
+    confirmRequired: false,
+    returnsData: true,
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What to look up in the user's documents",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "general_chat",
     description_it:
       "Rispondi a una domanda generica, una conversazione, o una richiesta creativa",
