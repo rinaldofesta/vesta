@@ -73,7 +73,7 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 
 ## Status
 
-Vesta is **early and under active development** (Fase 2 — Core Polish complete). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The core is verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, and contact search run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Next up: Fase 3 — Document Intelligence (RAG). Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
+Vesta is **early and under active development** (Fase 2 — Core Polish complete). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The core is verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, and contact search run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Fase 3 — Document Intelligence adds on-device RAG: import a PDF, Word, text, or Markdown file and ask questions answered from its contents, fully offline — verified on a Pixel 10 Pro, PDF included. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
@@ -209,7 +209,7 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 | **Fase 0** — Model Validation | ✅ Done | Benchmark models, validate architecture, finalize system prompt |
 | **Fase 1** — Android MVP | ✅ Done | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
 | **Fase 2** — Core Polish | ✅ Done | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, malformed-JSON retry — verified on a Pixel 10 Pro, fully offline |
-| **Fase 3** — Document Intelligence | 📋 Planned | PDF/DOCX upload, RAG with sqlite-vec, offline search |
+| **Fase 3** — Document Intelligence | ✅ Done | Import PDF / Word / text / Markdown, on-device embeddings (Nomic) + brute-force cosine retrieval, `query_document` — grounded offline answers, verified on a Pixel 10 Pro |
 | **Fase 4** — Mac Hub | 📋 Planned | Optional LAN hub delegating heavy queries to a 70B model |
 | **Fase 5** — iOS Port | 📋 Planned | MLX-Swift inference, App Intents for actions |
 | **Fase 6** — MCP + Advanced | 📋 Planned | Expose tools as an MCP server, accessibility |
