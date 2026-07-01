@@ -26,6 +26,7 @@ import {
 import { listGgufFiles, resolveUrl, type HfFile } from "../models/hf-client";
 import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
 import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
+import { getPerfSettings, perfToLlmOptions } from "../llm/perf-config";
 import { useChatStore } from "./chat-store";
 
 // Serializes the "first model auto-activates" decision so two near-simultaneous
@@ -73,6 +74,7 @@ interface ModelState {
   ) => Promise<void>;
   importLocalModel: (uri: string, name: string) => Promise<void>;
   activate: (id: string) => Promise<void>;
+  reloadActive: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   cancel: (id: string) => Promise<void>;
   clearError: () => void;
@@ -205,7 +207,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
       return;
     }
     try {
+      const perf = perfToLlmOptions(await getPerfSettings());
       await loadModel(model.filePath, {
+        ...perf,
         contextSize: model.contextSize,
         gpuLayers: 0,
         chatTemplate: model.chatTemplate ?? undefined,
@@ -219,6 +223,15 @@ export const useModelStore = create<ModelState>((set, get) => ({
       // write failed after a successful load (H2).
       useChatStore.getState().updateModelStatus();
     }
+  },
+
+  // Reload the active model so changed perf settings (threads/mlock/KV quant)
+  // take effect — a no-op if nothing is active.
+  reloadActive: async () => {
+    const active = await getActiveModel();
+    if (!active) return;
+    await unloadModel().catch(() => {});
+    await get().activate(active.id);
   },
 
   remove: async (id: string) => {

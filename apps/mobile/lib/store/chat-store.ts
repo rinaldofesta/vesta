@@ -29,6 +29,7 @@ import {
   getModelInfo,
   stopGeneration as llmStopGeneration,
 } from "../llm/llm-engine";
+import { getPerfSettings, perfToLlmOptions } from "../llm/perf-config";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
 import { startVestaService } from "../native/vesta-service";
 import * as FileSystem from "expo-file-system/legacy";
@@ -117,7 +118,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (active && !isLoaded()) {
         const fileInfo = await FileSystem.getInfoAsync(active.filePath);
         if (fileInfo.exists) {
+          const perf = perfToLlmOptions(await getPerfSettings());
           await loadModel(active.filePath, {
+            ...perf,
             contextSize: active.contextSize,
             gpuLayers: 0,
             chatTemplate: active.chatTemplate ?? undefined,

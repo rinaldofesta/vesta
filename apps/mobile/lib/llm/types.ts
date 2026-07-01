@@ -3,6 +3,9 @@ export interface LlmOptions {
   gpuLayers?: number;
   threads?: number;
   useMlock?: boolean;
+  // KV-cache quantization (e.g. "q8_0") — halves KV memory so longer contexts
+  // fit, at a small quality cost. Undefined leaves the cache at f16.
+  kvCacheType?: "f16" | "q8_0" | "q4_0";
   // Optional per-model chat template (Jinja). When a GGUF ships a wrong/missing
   // template, pass the correct one so tool-call JSON stays parseable.
   chatTemplate?: string;
