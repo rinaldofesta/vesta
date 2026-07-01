@@ -117,6 +117,15 @@ export function loadModel(
         // Roll the oldest tokens out of the KV cache instead of hard-failing
         // when a long chat exceeds n_ctx (LLM-6).
         ctx_shift: true,
+        // Quantize the KV cache when requested (halves KV RAM). V-cache quant
+        // needs flash attention, so enable it alongside.
+        ...(options?.kvCacheType
+          ? {
+              cache_type_k: options.kvCacheType,
+              cache_type_v: options.kvCacheType,
+              flash_attn_type: "on" as const,
+            }
+          : {}),
         // Only override the embedded template when one is explicitly provided.
         ...(options?.chatTemplate ? { chat_template: options.chatTemplate } : {}),
       },
