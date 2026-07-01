@@ -32,6 +32,34 @@ const FORMAT_VALIDATORS: Record<string, (value: string) => string | null> = {
   },
 };
 
+// Models sometimes emit a full ISO datetime where a bare date is expected —
+// e.g. get_calendar_events date: "2026-07-02T00:00:00", following the prompt's
+// general "YYYY-MM-DDTHH:MM:SS" date-format rule instead of the tool schema.
+// The datetime carries strictly more information than the parameter needs, so
+// truncate to the date part rather than reject the whole call. Exported for
+// unit tests.
+export function normalizeToolParams(
+  tool: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const def = MVP_TOOLS.find((t) => t.name === tool);
+  if (!def) return params;
+  const out = { ...params };
+  for (const [key, prop] of Object.entries(def.parameters.properties)) {
+    const value = out[key];
+    if (
+      prop.format === "YYYY-MM-DD" &&
+      typeof value === "string" &&
+      value.length > 10 &&
+      value[10] === "T" &&
+      isValidYMD(value.slice(0, 10))
+    ) {
+      out[key] = value.slice(0, 10);
+    }
+  }
+  return out;
+}
+
 function validateParams(
   tool: string,
   params: Record<string, unknown>,
@@ -68,9 +96,10 @@ function validateParams(
 
 export async function dispatchToolCall(
   tool: string,
-  parameters: Record<string, unknown>,
+  rawParameters: Record<string, unknown>,
   lang: Language = "en",
 ): Promise<ToolCallResult> {
+  const parameters = normalizeToolParams(tool, rawParameters);
   const validationError = validateParams(tool, parameters);
   if (validationError) {
     return { success: false, message: "Invalid parameters", error: validationError };
