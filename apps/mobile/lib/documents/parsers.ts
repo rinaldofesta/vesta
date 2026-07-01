@@ -13,54 +13,85 @@ import {
   base64ToBytes,
   docxXmlToText,
   UnsupportedDocumentError,
+  DocumentParseError,
 } from "./parse-util";
 
-export { classifyDocument, UnsupportedDocumentError } from "./parse-util";
+export {
+  classifyDocument,
+  UnsupportedDocumentError,
+  DocumentParseError,
+} from "./parse-util";
 export type { DocKind } from "./parse-util";
 
 async function parseDocx(uri: string): Promise<string> {
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const zip = await JSZip.loadAsync(b64, { base64: true });
-  const entry = zip.file("word/document.xml");
-  if (!entry) throw new Error("Not a valid .docx (missing word/document.xml)");
-  const xml = await entry.async("string");
-  return docxXmlToText(xml);
+  try {
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const zip = await JSZip.loadAsync(b64, { base64: true });
+    const entry = zip.file("word/document.xml");
+    if (!entry) throw new Error("Not a valid .docx (missing word/document.xml)");
+    const xml = await entry.async("string");
+    return docxXmlToText(xml);
+  } catch (err) {
+    if (err instanceof DocumentParseError) throw err;
+    throw new DocumentParseError(err);
+  }
+}
+
+// Populate the main-thread pdfjs worker once. On Hermes there is no DOM and no
+// web worker, so pdfjs can't load pdf.worker.js by URL; instead we import the
+// worker module and expose its WorkerMessageHandler on globalThis, which pdfjs'
+// fake-worker path picks up to run entirely on the JS thread.
+let pdfWorkerReady = false;
+async function ensurePdfWorker(pdfjs: typeof import("pdfjs-dist/legacy/build/pdf")) {
+  if (pdfWorkerReady) return;
+  const worker = await import("pdfjs-dist/legacy/build/pdf.worker");
+  const g = globalThis as { pdfjsWorker?: unknown };
+  // The worker module's exports include WorkerMessageHandler.
+  g.pdfjsWorker = worker;
+  // Must be non-empty or pdfjs throws "No workerSrc specified" before falling
+  // back to the main-thread handler.
+  (pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc = "vesta-inline";
+  pdfWorkerReady = true;
 }
 
 async function parsePdf(uri: string): Promise<string> {
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const data = base64ToBytes(b64);
+  try {
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const data = base64ToBytes(b64);
 
-  // Lazy-load pdfjs so its bulk + any Hermes quirks never touch app boot.
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
-  // Run on the JS thread: with no loadable workerSrc, pdfjs uses a fake worker.
-  (pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc = "";
+    // Lazy-load pdfjs so its bulk + Hermes quirks never touch app boot.
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
+    await ensurePdfWorker(pdfjs);
 
-  const loadingTask = pdfjs.getDocument({
-    data,
-    isEvalSupported: false,
-    useSystemFonts: false,
-    disableFontFace: true,
-  });
-  const pdf = await loadingTask.promise;
-  const pages: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const line = content.items
-      .map((it: unknown) =>
-        it && typeof (it as { str?: unknown }).str === "string"
-          ? (it as { str: string }).str
-          : "",
-      )
-      .join(" ");
-    pages.push(line);
+    const loadingTask = pdfjs.getDocument({
+      data,
+      isEvalSupported: false,
+      useSystemFonts: false,
+      disableFontFace: true,
+    });
+    const pdf = await loadingTask.promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      // Preserve line breaks (hasEOL) so the chunker sees paragraph structure.
+      let line = "";
+      for (const it of content.items as { str?: unknown; hasEOL?: boolean }[]) {
+        if (typeof it.str === "string") line += it.str;
+        if (it.hasEOL) line += "\n";
+        else line += " ";
+      }
+      pages.push(line.trim());
+    }
+    return pages.join("\n\n").trim();
+  } catch (err) {
+    if (err instanceof DocumentParseError) throw err;
+    throw new DocumentParseError(err);
   }
-  return pages.join("\n\n").trim();
 }
 
 // Extract plain text from a document by URI. Throws UnsupportedDocumentError for

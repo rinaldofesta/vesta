@@ -10,6 +10,9 @@ import type { ToolCallResult, Language } from "./types";
 import { topKByCosine } from "../documents/similarity";
 
 const TOP_K = 5;
+// Relevance floor for L2-normalized nomic cosine. On-topic chunks score well
+// above this; unrelated queries fall below it. May need on-device tuning.
+const MIN_SCORE = 0.28;
 
 export async function queryDocuments(
   query: string,
@@ -66,14 +69,28 @@ export async function queryDocuments(
 
   const top = topKByCosine(queryVec, chunks, TOP_K);
 
+  // Relevance floor: if even the best match is weak, don't feed unrelated
+  // passages to the model (which is told to answer "using ONLY this data" and
+  // would otherwise confabulate) — say we found nothing instead.
+  if (top.length === 0 || top[0].score < MIN_SCORE) {
+    return {
+      success: false,
+      message:
+        lang === "it"
+          ? "Non ho trovato nulla di pertinente nei tuoi documenti."
+          : "I couldn't find anything relevant in your documents.",
+    };
+  }
+
   // Cite the source document + chunk so the model (and user) can see where each
-  // passage came from.
+  // passage came from. Language-neutral so the label never forces an English
+  // token into a localized answer.
   const docs = await getDocuments();
   const nameById = new Map(docs.map((d) => [d.id, d.filename]));
   const data = top
     .map((r) => {
-      const src = nameById.get(r.chunk.documentId) ?? "document";
-      return `[${src}, part ${r.chunk.ordinal + 1}]\n${r.chunk.text}`;
+      const src = nameById.get(r.chunk.documentId) ?? "?";
+      return `[${src} #${r.chunk.ordinal + 1}]\n${r.chunk.text}`;
     })
     .join("\n\n");
 

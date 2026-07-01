@@ -18,15 +18,16 @@ export interface RankedChunk {
 }
 
 // Rank chunks by cosine similarity to the query vector, highest first, top k.
+// Non-finite scores (from a corrupted embedding BLOB) are dropped rather than
+// left to scramble the sort comparator and bury genuine matches.
 export function topKByCosine(
   queryVec: Float32Array,
   chunks: StoredChunk[],
   k: number,
 ): RankedChunk[] {
-  const scored = chunks.map((chunk) => ({
-    chunk,
-    score: dot(queryVec, chunk.embedding),
-  }));
+  const scored = chunks
+    .map((chunk) => ({ chunk, score: dot(queryVec, chunk.embedding) }))
+    .filter((s) => Number.isFinite(s.score));
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, k);
 }

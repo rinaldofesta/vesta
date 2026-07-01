@@ -9,6 +9,8 @@ import {
   Alert,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
+import { useRouter } from "expo-router";
+import { useChatStore } from "../lib/store/chat-store";
 import {
   importAndIndexDocument,
   listDocuments,
@@ -19,9 +21,11 @@ import {
 import {
   classifyDocument,
   UnsupportedDocumentError,
+  DocumentParseError,
 } from "../lib/documents/parsers";
 import { EmbeddingModelMissingError } from "../lib/llm/embed-engine";
 import type { DocumentRecord } from "../lib/storage/database";
+import type { Language } from "../lib/orchestrator/types";
 import { colors, spacing } from "../lib/theme";
 
 function formatFileSize(bytes: number): string {
@@ -30,10 +34,59 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Bilingual UI strings (CLAUDE.md: user-facing text must work in IT and EN).
+function strings(lang: Language) {
+  const it = lang === "it";
+  return {
+    desc: it
+      ? "Importa file PDF, Word (.docx), di testo o Markdown. Vesta li indicizza sul dispositivo così puoi farci domande — completamente offline. Serve un modello di embedding (Nomic Embed), disponibile in Modelli."
+      : "Import PDF, Word (.docx), text, or Markdown files. Vesta indexes them on-device so you can ask questions about their contents — fully offline. Requires an embedding model (Nomic Embed), available in Models.",
+    empty: it ? "Nessun documento importato." : "No documents imported yet.",
+    importBtn: it ? "+ Importa documento" : "+ Import Document",
+    remove: it ? "Rimuovi" : "Remove",
+    chunks: (n: number) =>
+      it
+        ? `${n} frammento${n === 1 ? "" : "i"}`
+        : `${n} chunk${n === 1 ? "" : "s"}`,
+    reading: it ? "Lettura del documento…" : "Reading document…",
+    indexing: (d: number, t: number) =>
+      it ? `Indicizzazione ${d}/${t} frammenti…` : `Indexing ${d}/${t} chunks…`,
+    saving: it ? "Salvataggio…" : "Saving…",
+    busyTitle: it ? "Attendi" : "Please wait",
+    busyBody: it
+      ? "Aspetta che Vesta finisca la risposta corrente."
+      : "Wait for Vesta to finish the current response.",
+    unsupportedTitle: it ? "File non supportato" : "Unsupported file",
+    unsupportedBody: it
+      ? "Scegli un file PDF, Word (.docx), di testo o Markdown."
+      : "Please choose a PDF, Word (.docx), text, or Markdown file.",
+    embedTitle: it ? "Serve un modello" : "Embedding model needed",
+    embedBody: it
+      ? "Scarica il modello Nomic Embed dalla schermata Modelli per indicizzare e cercare nei documenti."
+      : "Download the Nomic Embed model from the Models screen to index and search documents.",
+    getModel: it ? "Vai a Modelli" : "Go to Models",
+    cancel: it ? "Annulla" : "Cancel",
+    emptyDocTitle: it ? "Niente da indicizzare" : "Nothing to index",
+    parseTitle: it ? "Impossibile leggere il file" : "Couldn't read the file",
+    parseBody: it
+      ? "Questo file potrebbe essere danneggiato, protetto da password o in un formato non supportato."
+      : "This file may be corrupted, password-protected, or in an unsupported format.",
+    importFailTitle: it ? "Importazione non riuscita" : "Import failed",
+    removeTitle: it ? "Rimuovi documento" : "Remove document",
+    removeBody: (name: string) =>
+      it
+        ? `Rimuovere "${name}" e il suo indice?`
+        : `Remove "${name}" and its index?`,
+  };
+}
+
 export default function DocumentsScreen() {
+  const router = useRouter();
+  const language = useChatStore((s) => s.language);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
+  const t = strings(language);
 
   const refresh = useCallback(async () => {
     try {
@@ -48,6 +101,11 @@ export default function DocumentsScreen() {
   }, [refresh]);
 
   const handleImport = async () => {
+    // Don't compete with an in-flight chat generation for CPU.
+    if (useChatStore.getState().isGenerating) {
+      Alert.alert(t.busyTitle, t.busyBody);
+      return;
+    }
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "*/*",
@@ -58,10 +116,7 @@ export default function DocumentsScreen() {
       const name = asset.name ?? "document";
 
       if (!classifyDocument(name, asset.mimeType)) {
-        Alert.alert(
-          "Unsupported file",
-          "Please choose a PDF, Word (.docx), text, or Markdown file.",
-        );
+        Alert.alert(t.unsupportedTitle, t.unsupportedBody);
         return;
       }
 
@@ -77,17 +132,19 @@ export default function DocumentsScreen() {
       await refresh();
     } catch (err) {
       if (err instanceof EmbeddingModelMissingError) {
-        Alert.alert(
-          "Embedding model needed",
-          "Download the Nomic Embed model from the Models screen to index and search documents.",
-        );
+        Alert.alert(t.embedTitle, t.embedBody, [
+          { text: t.cancel, style: "cancel" },
+          { text: t.getModel, onPress: () => router.push("/models") },
+        ]);
       } else if (err instanceof UnsupportedDocumentError) {
-        Alert.alert("Unsupported file", err.message);
+        Alert.alert(t.unsupportedTitle, t.unsupportedBody);
       } else if (err instanceof EmptyDocumentError) {
-        Alert.alert("Nothing to index", err.message);
+        Alert.alert(t.emptyDocTitle, t.parseBody);
+      } else if (err instanceof DocumentParseError) {
+        Alert.alert(t.parseTitle, t.parseBody);
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        Alert.alert("Import failed", msg);
+        Alert.alert(t.importFailTitle, msg);
       }
     } finally {
       setBusy(false);
@@ -96,10 +153,10 @@ export default function DocumentsScreen() {
   };
 
   const handleRemove = (doc: DocumentRecord) => {
-    Alert.alert("Remove document", `Remove "${doc.filename}" and its index?`, [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t.removeTitle, t.removeBody(doc.filename), [
+      { text: t.cancel, style: "cancel" },
       {
-        text: "Remove",
+        text: t.remove,
         style: "destructive",
         onPress: async () => {
           await removeDocument(doc.id);
@@ -112,18 +169,14 @@ export default function DocumentsScreen() {
   const progressLabel = !progress
     ? ""
     : progress.phase === "embedding"
-      ? `Indexing ${progress.done}/${progress.total} chunks…`
+      ? t.indexing(progress.done, progress.total)
       : progress.phase === "parsing"
-        ? "Reading document…"
-        : "Saving…";
+        ? t.reading
+        : t.saving;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.desc}>
-        Import PDF, Word (.docx), text, or Markdown files. Vesta indexes them
-        on-device so you can ask questions about their contents — fully offline.
-        Requires an embedding model (Nomic Embed), available in Models.
-      </Text>
+      <Text style={styles.desc}>{t.desc}</Text>
 
       {documents.map((doc) => (
         <View key={doc.id} style={styles.row}>
@@ -132,8 +185,7 @@ export default function DocumentsScreen() {
               {doc.filename}
             </Text>
             <Text style={styles.rowMeta}>
-              {doc.chunkCount} chunk{doc.chunkCount === 1 ? "" : "s"} ·{" "}
-              {formatFileSize(doc.sizeBytes)}
+              {t.chunks(doc.chunkCount)} · {formatFileSize(doc.sizeBytes)}
             </Text>
           </View>
           <TouchableOpacity
@@ -142,13 +194,13 @@ export default function DocumentsScreen() {
             activeOpacity={0.7}
             disabled={busy}
           >
-            <Text style={styles.removeText}>Remove</Text>
+            <Text style={styles.removeText}>{t.remove}</Text>
           </TouchableOpacity>
         </View>
       ))}
 
       {documents.length === 0 && !busy && (
-        <Text style={styles.empty}>No documents imported yet.</Text>
+        <Text style={styles.empty}>{t.empty}</Text>
       )}
 
       {busy ? (
@@ -162,7 +214,7 @@ export default function DocumentsScreen() {
           onPress={handleImport}
           activeOpacity={0.7}
         >
-          <Text style={styles.importBtnText}>+ Import Document</Text>
+          <Text style={styles.importBtnText}>{t.importBtn}</Text>
         </TouchableOpacity>
       )}
     </ScrollView>

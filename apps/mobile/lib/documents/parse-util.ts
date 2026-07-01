@@ -10,6 +10,16 @@ export class UnsupportedDocumentError extends Error {
   }
 }
 
+// Thrown when a DOCX/PDF fails to parse (corrupt, encrypted, wrong type, or an
+// unsupported runtime). Caught by the UI and shown as a clean bilingual message,
+// instead of leaking a raw jszip/pdfjs internal string.
+export class DocumentParseError extends Error {
+  constructor(cause?: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause ?? "parse failed"));
+    this.name = "DocumentParseError";
+  }
+}
+
 // Map a filename/mime to a supported kind, or null if unsupported.
 export function classifyDocument(
   filename: string,
