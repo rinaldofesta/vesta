@@ -7,10 +7,11 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
-Fase 2 — Core Polish shipped. All 10 core tools and the orchestrator query
-loop are implemented and CI-verified across PRs #11–#13 (typecheck, lint,
-tests, Android build). On-device verification of the new contacts/calendar
-tools is still pending a rebuild. See [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
+Fase 2 — Core Polish complete. All 10 core tools and the orchestrator query
+loop are implemented and verified on real hardware (a Pixel 10 Pro): timers,
+calendar read, and contact search run fully offline against real on-device
+data, with calls/SMS gated behind explicit confirmation. See
+[docs/GAMEPLAN.md](docs/GAMEPLAN.md).
 
 ### Added
 
@@ -21,8 +22,11 @@ tools is still pending a rebuild. See [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
   explicit confirmation step.
 - **Orchestrator query loop** — read tools (`get_calendar_events`,
   `search_contacts`) execute inline, so questions like "che appuntamenti ho
-  domani?" are answered in natural language from real on-device data, with a
-  JSON-fallback guard for malformed model output.
+  domani?" are answered in natural language from real on-device data.
+- **Malformed-JSON recovery** — when the model emits an unparseable or truncated
+  tool call, the orchestrator retries once with a correction prompt that asks
+  for the JSON object only, then falls back to a plain reply if it still fails
+  (the Fase 2 exit-gate requirement).
 - **Honest tool-result messages** (#12) — `set_alarm` no longer claims a
   future date (Android arms only the next occurrence), and `create_event`
   reports that the calendar editor opened rather than falsely claiming the
