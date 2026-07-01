@@ -21,13 +21,13 @@ vesta/
 │   │   │   ├── tools/             # Tool definitions (TS)
 │   │   │   ├── storage/           # SQLite + sqlite-vec (TS)
 │   │   │   ├── rag/               # Document pipeline (TS)
-│   │   │   └── hub/               # Mac Hub connection (TS)
+│   │   │   └── hub/               # Mac Hub connection (TS) (parcheggiato — non ancora creato)
 │   │   ├── native/                # Native modules
 │   │   │   ├── android/           # Kotlin: llama.cpp bridge, Intents, Service
 │   │   │   └── ios/               # Swift: MLX bridge, App Intents (futuro)
 │   │   └── assets/
 │   │
-│   └── mac-hub/                   # Node.js server
+│   └── mac-hub/                   # Node.js server (parcheggiato — non ancora creato)
 │       ├── src/
 │       │   ├── server.ts          # WebSocket + mDNS
 │       │   ├── ollama-client.ts   # Client Ollama
@@ -444,6 +444,13 @@ export const TOOLS_V1: ToolDefinition[] = [
 
 ### 3.3 System Prompt Template
 
+> **Nota (Fase 4):** l'ordinamento del prompt è cambiato — la fonte di verità è
+> `apps/mobile/lib/orchestrator/prompt-builder.ts`. Il prompt è diviso in un
+> PREFISSO STABILE (persona + formato + regole + tool schema + memorie/knowledge)
+> e una CODA VOLATILE (contesto data/ora, precisione al minuto) in fondo, così
+> llama.rn riusa la KV cache del prefisso tra i turni. Mai interpolare data/ora
+> sopra il blocco dei tool. Lo sketch qui sotto riflette il nuovo ordinamento.
+
 ```typescript
 // lib/orchestrator/prompts.ts
 
@@ -467,9 +474,9 @@ export function buildSystemPrompt(params: {
     ? `\nInformazioni sull'utente:\n${params.memories.map(m => `- ${m}`).join('\n')}\n`
     : '';
 
+  // PREFISSO STABILE — byte-identico tra i turni (niente data/ora qui!)
   return `Sei un assistente personale locale. Rispondi in ${params.language}.
-Data e ora corrente: ${params.currentDatetime} (${params.timezone})
-${memoriesSection}
+
 Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSON valido:
 {
   "tool": "nome_del_tool",
@@ -480,18 +487,21 @@ Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSO
 Quando l'utente fa una domanda o vuole conversare, rispondi normalmente in testo.
 
 IMPORTANTE:
-- Le date devono essere in formato ISO 8601 (es. "2026-03-12T15:00:00")
+- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS" (usa la data reale dal contesto temporale in fondo)
 - Gli orari devono essere in formato HH:MM (es. "07:30" per le 7 e mezza)
-- "Domani" significa ${params.currentDatetime.split('T')[0]} + 1 giorno
 - "Giovedì prossimo" significa il prossimo giovedì dalla data corrente
-- "Stasera" significa oggi tra le 18:00 e le 23:00
+- "Stasera" significa oggi, dalle 19:00 se non specificato
 - Se un parametro è ambiguo, chiedi chiarimento all'utente
 
 Strumenti disponibili:
 
 ${toolsDescription}
 
-Se la richiesta non corrisponde a nessuno strumento, usa "general_chat" e rispondi normalmente.`;
+Se la richiesta non corrisponde a nessuno strumento, usa "general_chat" e rispondi normalmente.
+${memoriesSection}
+Contesto temporale corrente:
+Data e ora: ${params.currentDatetime} (${params.timezone}). Domani è il giorno successivo a oggi.`;
+  // ^ CODA VOLATILE — ricostruita ogni turno, sempre per ultima
 }
 ```
 
@@ -774,6 +784,8 @@ Soglie di accettazione:
 
 ## 7. Specifiche Mac Hub
 
+> ⏸️ **Parcheggiato (re-scope Android-first):** il Mac Hub è in pausa — vedi GAMEPLAN.md. Le specifiche restano come riferimento per la ripresa futura.
+
 ### 7.1 Server
 
 ```typescript
@@ -919,7 +931,7 @@ log.error('native', 'Intent failed', { intent: 'ACTION_SET_ALARM', error: '...' 
 - `llama.cpp` (C++, compilato via Android NDK)
 - `sqlite-vec` (C, compilato come estensione SQLite)
 
-### 9.2 Mac Hub
+### 9.2 Mac Hub (parcheggiato)
 
 ```json
 {

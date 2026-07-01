@@ -159,12 +159,20 @@ On a Snapdragon 8 Gen 3 (~25-30 tok/s for 4B Q4_K_M):
 scripts/benchmark/
 ├── prompts.jsonl           # 100 test prompts (50 IT, 50 EN)
 ├── tool-schema.ts          # 4 MVP tool definitions
-├── system-prompt.ts        # Bilingual prompt builder (V2 — production)
+├── system-prompt.ts        # Bilingual prompt builder (restructured in Fase 4 — see note below)
 ├── run.ts                  # Benchmark runner (--mock, --no-think flags)
 ├── run-all.sh              # Multi-model comparison script
+├── archive/                # Frozen V2 prompt these results were measured against (verbatim, from commit f98ce9a)
+│   ├── system-prompt-v2-fase0.ts
+│   └── tool-schema.ts      # Copied alongside so the archived prompt's imports resolve
 └── results/
-    ├── qwen3-4b.csv        # Full results with thinking
-    ├── qwen3-4b-no-think.csv  # Results without thinking
+    ├── fase0-baseline-2026-03-09/  # FROZEN Fase 0 record (verbatim copies of the March 9 runs)
+    │   ├── qwen3-4b.csv
+    │   ├── qwen3-4b-no-think.csv
+    │   ├── qwen3-8b.csv
+    │   └── llama3.2-3b.csv
+    ├── qwen3-4b.csv        # Live outputs — overwritten by re-runs (full results with thinking)
+    ├── qwen3-4b-no-think.csv  # Live outputs — overwritten by re-runs (without thinking)
     ├── qwen3-8b.csv
     └── llama3.2-3b.csv
 ```
@@ -179,9 +187,11 @@ scripts/benchmark/
 | Tool accuracy (easy+medium, EN) | >=90% | 97.8% | **PASS** |
 | JSON valid (easy+medium) | >=95% | 98.9% | **PASS** |
 | Model chosen | Yes | qwen3:4b | **PASS** |
-| System prompt finalized | Yes | V2 (system-prompt.ts) | **PASS** |
+| System prompt finalized | Yes | V2 (archive/system-prompt-v2-fase0.ts) | **PASS** |
 
 **Fase 0 is complete. Proceed to Fase 1: Android MVP.**
+
+> **Note (2026-07, Fase 4):** the live `system-prompt.ts` was restructured after these results were recorded (stable prefix / volatile tail for KV-cache reuse). The exact V2 prompt that produced the numbers above is archived verbatim at `scripts/benchmark/archive/system-prompt-v2-fase0.ts` (extracted from commit f98ce9a). Re-runs against the restructured prompt must be compared with that caveat in mind.
 
 ---
 
@@ -192,5 +202,5 @@ scripts/benchmark/
 | 2026-03-09 | Primary model: qwen3:4b | 97.8% tool accuracy, balanced IT/EN, thinking mode advantage |
 | 2026-03-09 | Fallback model: llama3.2:3b | 94% accuracy at 7x lower latency, for speed-critical scenarios |
 | 2026-03-09 | Keep thinking mode enabled on phone | 4.5% accuracy gain worth the latency cost (3-5s acceptable) |
-| 2026-03-09 | System prompt V2 is production baseline | Explicit optional param rules + temporal defaults = 55% accuracy improvement |
+| 2026-03-09 | System prompt V2 is production baseline | Explicit optional param rules + temporal defaults = 55% accuracy improvement. (V2 text now archived at archive/system-prompt-v2-fase0.ts; live prompt restructured in Fase 4.) |
 | 2026-03-09 | qwen3:8b dropped from consideration | Lower accuracy than 4B despite being 2x larger |

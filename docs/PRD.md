@@ -117,7 +117,9 @@ Implementation: Qwen3 4B already supports 100+ languages natively. No model chan
 | US-31 | "Fammi un quiz su quello che abbiamo studiato" | Quiz con domande, opzioni, feedback correttivo. |
 | US-32 | "Non ho capito il concetto di Terrore, spiegamelo meglio" | Spiegazione adattiva basata sul contesto della sessione di studio. |
 
-### 5.5 Mac Hub (Priority: P2)
+### 5.5 Mac Hub (Priority: P2) — ⏸️ PARCHEGGIATO
+
+> **Parcheggiato (re-scope Android-first):** il Mac Hub è in pausa insieme al port iOS — vedi §10 Roadmap. Le user story restano documentate per la ripresa futura; nessuna è un requisito attivo.
 
 | ID | User Story | Criterio di Accettazione |
 |---|---|---|
@@ -236,26 +238,26 @@ FASE 3  [Week 8-10]     Document Intelligence (RAG)
   └─ EXIT GATE: Upload a 20-page PDF, ask a specific question,
                 get a correct answer with source reference. Offline.
 
-FASE 4  [Week 11-13]    Mac Hub (Vesta Hearth)
-  ├─ Node.js WebSocket server + Ollama on Mac
-  ├─ mDNS discovery (automatic on LAN)
-  ├─ Delegate complex queries to 70B model
-  ├─ Transparent fallback (phone works without Mac)
-  └─ EXIT GATE: Phone auto-connects to Mac when on same WiFi.
-                Complex query answered by 70B. Disconnect Mac → phone
-                answers same query with local model (lower quality, still works).
+FASE 4  [In progress]   On-device Performance
+  ├─ Prompt restructuring for KV-cache reuse (stable prefix / volatile tail)
+  ├─ Perf settings: CPU threads, KV-cache quantization (q8_0), mlock
+  ├─ Persistent prefix-KV cache for cold start (saveSession/loadSession)
+  ├─ Benchmark: prefill latency + tok/s on device, before/after
+  └─ EXIT GATE: Measurable prefill-latency reduction on repeated prompts
+                on a real device, with no tool-accuracy regression
+                (Fase 0 benchmark holds).
 
-FASE 5  [Week 14-17]    iOS Port
-  ├─ MLX-Swift native module for inference
-  ├─ App Intents framework for system actions
-  ├─ Same React Native UI, different native bridge
-  └─ EXIT GATE: Same demo ("svegliami alle 7") works on iPhone.
-
-FASE 6  [Week 18+]      MCP + Advanced
+FASE 5  [Future]        MCP + Advanced
   ├─ MCP Server: expose Vesta tools as MCP endpoints (local agent infra)
   ├─ Study plans + interactive tutor
   ├─ Multi-agent swarm
   ├─ Accessibility Service (Android, opt-in, sideload only)
   ├─ Offline knowledge base (Wikipedia, recipes)
   └─ EXIT GATE: Per-feature, defined when each starts.
+
+PARKED  [Android-first] Mac Hub (Vesta Hearth) & iOS Port
+  ├─ Mac Hub: Node.js WebSocket server + Ollama, mDNS discovery,
+  │           delegate complex queries to 70B, transparent fallback
+  ├─ iOS: MLX-Swift inference + App Intents, same React Native UI
+  └─ Both remain on the long-term roadmap; neither is a current priority.
 ```
