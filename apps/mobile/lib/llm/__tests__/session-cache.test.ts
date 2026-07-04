@@ -35,6 +35,7 @@ jest.mock("expo-file-system/legacy", () => {
 });
 
 jest.mock("../llm-engine", () => ({
+  getKvCacheType: jest.fn(() => "f16"),
   getModelInfo: jest.fn(),
   loadSessionFile: jest.fn(),
   snapshotPrefixSession: jest.fn(),
@@ -47,6 +48,7 @@ import {
   clearPrefixSessionCache,
 } from "../session-cache";
 import {
+  getKvCacheType,
   getModelInfo,
   loadSessionFile,
   snapshotPrefixSession,
@@ -74,6 +76,7 @@ beforeEach(async () => {
   await clearPrefixSessionCache();
   jest.useFakeTimers().setSystemTime(new Date(2026, 6, 4, 10, 0, 0));
   mockModelInfo.mockReturnValue({ loaded: true, path: "file:///m/qwen3-4b.gguf" });
+  (getKvCacheType as jest.Mock).mockReturnValue("f16");
   // The real snapshot writes the session file as a side effect of saveSession.
   mockSnapshot.mockImplementation(async (opts) => {
     fs.__files.set(opts.path, "KVBIN");
@@ -183,6 +186,20 @@ describe("restore staleness and failure paths", () => {
 
     expect(await restorePrefixSession(PREFIX)).toBeNull();
     expect(mockLoad).not.toHaveBeenCalled();
+  });
+
+  test("KV-quant perf toggle invalidates the cache (typed KV cells)", async () => {
+    await persistPrefixSession(PREFIX, "A", "B");
+    // User enables q8_0 in Settings → reloadActive → f16 file must MISS the
+    // hash check, not fail inside llama.cpp's typed state load.
+    (getKvCacheType as jest.Mock).mockReturnValue("q8_0");
+
+    expect(await restorePrefixSession(PREFIX)).toBeNull();
+    expect(mockLoad).not.toHaveBeenCalled();
+
+    // The next clean turn under q8_0 re-persists.
+    pastDebounce();
+    expect(await persistPrefixSession(PREFIX, "A", "B")).toBe(1456);
   });
 
   test("orphaned meta without bin: deleted, and persist is NOT wedged", async () => {

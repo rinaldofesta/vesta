@@ -8,9 +8,10 @@
 // tail + user message.
 //
 // Policy (this file) vs mechanics (llm-engine):
-// - The session file is keyed by hash(modelPath + stable prefix text). Any
-//   change to the model, language, memories, or knowledge files changes the
-//   hash, which invalidates the file; a later clean turn re-saves it.
+// - The session file is keyed by hash(modelPath + KV cache type + stable
+//   prefix text). Any change to the model, the KV-quant perf setting, the
+//   language, memories, or knowledge files changes the hash, which
+//   invalidates the file; a later clean turn re-saves it.
 // - Saving happens AFTER a normal user turn — the prefix KV is already in
 //   memory then, so persisting costs one disk write and zero extra prefill.
 //   That write is NOT small: llama.cpp serializes the full KV state (hundreds
@@ -24,6 +25,7 @@
 
 import * as FileSystem from "expo-file-system/legacy";
 import {
+  getKvCacheType,
   getModelInfo,
   loadSessionFile,
   snapshotPrefixSession,
@@ -71,7 +73,12 @@ export function fnv1aHex(s: string): string {
 }
 
 function cacheKey(modelPath: string, stablePrefix: string): string {
-  return fnv1aHex(modelPath + "\u0000" + stablePrefix);
+  // The KV cache type is part of the key: session files store KV cells in the
+  // loaded context's type, so restoring an f16 file into a q8_0 context (or
+  // vice versa after a perf-settings change) must miss instead of erroring.
+  return fnv1aHex(
+    modelPath + "\u0000" + getKvCacheType() + "\u0000" + stablePrefix,
+  );
 }
 
 async function readMeta(): Promise<SessionMeta | null> {

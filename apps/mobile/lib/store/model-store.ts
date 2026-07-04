@@ -25,8 +25,9 @@ import {
 } from "../models/download-manager";
 import { listGgufFiles, resolveUrl, type HfFile } from "../models/hf-client";
 import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
-import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
+import { loadModel, unloadModel, validateGguf, getModelInfo } from "../llm/llm-engine";
 import { warmSessionCache } from "../orchestrator/session-warmer";
+import { getPerfSettings, perfToLlmOptions } from "../llm/perf-config";
 import { useChatStore } from "./chat-store";
 
 // Serializes the "first model auto-activates" decision so two near-simultaneous
@@ -74,6 +75,7 @@ interface ModelState {
   ) => Promise<void>;
   importLocalModel: (uri: string, name: string) => Promise<void>;
   activate: (id: string) => Promise<void>;
+  reloadActive: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   cancel: (id: string) => Promise<void>;
   clearError: () => void;
@@ -206,7 +208,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
       return;
     }
     try {
+      const perf = perfToLlmOptions(await getPerfSettings());
       await loadModel(model.filePath, {
+        ...perf,
         contextSize: model.contextSize,
         gpuLayers: 0,
         chatTemplate: model.chatTemplate ?? undefined,
@@ -223,6 +227,21 @@ export const useModelStore = create<ModelState>((set, get) => ({
       // Always reflect what's actually loaded in native, even if the registry
       // write failed after a successful load (H2).
       useChatStore.getState().updateModelStatus();
+    }
+  },
+
+  // Reload the active model so changed perf settings (threads/mlock/KV quant)
+  // take effect — a no-op if nothing is active.
+  reloadActive: async () => {
+    const active = await getActiveModel();
+    if (!active) return;
+    await unloadModel().catch(() => {});
+    await get().activate(active.id);
+    // activate() reports load failures via store state, never by throwing —
+    // surface them here so callers (Settings updatePerf) can actually revert
+    // a rejected setting instead of silently ending up with no model loaded.
+    if (!getModelInfo().loaded) {
+      throw new Error(get().error ?? "Model reload failed");
     }
   },
 

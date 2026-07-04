@@ -85,6 +85,11 @@ let stopRequested = false;
 // would discard it and force a full history re-prefill on the next turn, so
 // loadSessionFile only runs while this is false.
 let kvStateDirty = false;
+// KV cache tensor type of the loaded context ("f16" default, "q8_0" when the
+// perf setting is on). Session files store KV cells in this type, so the
+// session cache folds it into its key — a perf toggle must invalidate the
+// file deterministically instead of failing the load at the llama.cpp layer.
+let currentKvCacheType = "f16";
 
 // Rough token estimate (~3 chars/token is conservative for Italian/English
 // BPE) plus per-message chat-template overhead. Used to decide whether
@@ -144,14 +149,30 @@ export function loadModel(
         // Roll the oldest tokens out of the KV cache instead of hard-failing
         // when a long chat exceeds n_ctx (LLM-6).
         ctx_shift: true,
+        // Quantize the KV cache when requested (halves KV RAM). V-cache quant
+        // needs flash attention, so enable it alongside.
+        ...(options?.kvCacheType
+          ? {
+              cache_type_k: options.kvCacheType,
+              cache_type_v: options.kvCacheType,
+              flash_attn_type: "on" as const,
+            }
+          : {}),
         // Only override the embedded template when one is explicitly provided.
         ...(options?.chatTemplate ? { chat_template: options.chatTemplate } : {}),
       },
       onProgress,
     );
     currentModelPath = modelPath;
+    currentKvCacheType = options?.kvCacheType ?? "f16";
     kvStateDirty = false;
   });
+}
+
+// Synchronous on purpose: the session cache computes its key inside the
+// persist fast path, which must not await before reaching the engine lock.
+export function getKvCacheType(): string {
+  return currentKvCacheType;
 }
 
 // Cheap pre-load validation: reads GGUF header/metadata without a full context
