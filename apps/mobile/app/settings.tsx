@@ -316,7 +316,8 @@ export default function SettingsScreen() {
           <View style={styles.toggleInfo}>
             <Text style={styles.toggleTitle}>Quantize KV cache (q8_0)</Text>
             <Text style={styles.toggleHint}>
-              Halves context memory so longer chats fit. Small quality cost.
+              Halves context memory so longer chats fit. Slower on CPU (~1.5x
+              measured) — use only if you need the RAM.
             </Text>
           </View>
           <Switch
