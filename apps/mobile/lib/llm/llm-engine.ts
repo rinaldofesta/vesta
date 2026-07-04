@@ -80,6 +80,24 @@ let currentContextSize: number = DEFAULT_OPTIONS.contextSize;
 // Set by stopGeneration(), read+cleared by the active generate(). Distinguishes a
 // user-initiated Stop from a natural finish (the native layer exposes no such flag).
 let stopRequested = false;
+// True once any completion has touched the KV cache since the last model load
+// (or explicit clear). Restoring a session file over live conversation state
+// would discard it and force a full history re-prefill on the next turn, so
+// loadSessionFile only runs while this is false.
+let kvStateDirty = false;
+
+// Rough token estimate (~3 chars/token is conservative for Italian/English
+// BPE) plus per-message chat-template overhead. Used to decide whether
+// context-window-sensitive background work (memory extraction, session-cache
+// save) is safe to run — precision doesn't matter.
+const TEMPLATE_TOKENS_PER_MESSAGE = 8;
+
+export function estimatePromptTokens(messages: CompletionMessage[]): number {
+  return messages.reduce(
+    (n, m) => n + Math.ceil(m.content.length / 3) + TEMPLATE_TOKENS_PER_MESSAGE,
+    0,
+  );
+}
 
 export function getModelInfo(): ModelInfo {
   return {
@@ -132,6 +150,7 @@ export function loadModel(
       onProgress,
     );
     currentModelPath = modelPath;
+    kvStateDirty = false;
   });
 }
 
@@ -174,6 +193,7 @@ export function generate(
     const opts = { ...DEFAULT_GENERATE, ...options };
     // Fresh turn: clear any stale stop request so it can't leak across turns.
     stopRequested = false;
+    kvStateDirty = true;
 
     const llamaMessages: RNLlamaOAICompatibleMessage[] = messages.map((m) => ({
       role: m.role,
@@ -216,6 +236,118 @@ export function generate(
       stoppedByLimit: result.stopped_limit > 0,
       stoppedByUser: stopRequested,
     };
+  });
+}
+
+// --- KV-session helpers (Fase 4: cold-start prefix cache + dev prefill benchmark) ---
+
+/**
+ * Clear the KV cache (and reset the dirty flag). Used by the dev prefill
+ * benchmark to guarantee each arm starts from a cold cache.
+ */
+export function clearKvCache(): Promise<void> {
+  return withLock(async () => {
+    if (!context) return;
+    await context.clearCache();
+    kvStateDirty = false;
+  });
+}
+
+/**
+ * Restore a saved KV session. Returns the restored token count plus the
+ * DETOKENIZED text of the restored tokens (the caller validates it actually
+ * starts with the expected stable prefix — a session file whose content
+ * doesn't match would be silently useless forever, since the cache key hashes
+ * the prefix text, not the file). Returns null when skipped: no model, or a
+ * completion already ran since load (restoring would clobber live state).
+ * Callers must treat null/throw as "start cold".
+ */
+export function loadSessionFile(
+  path: string,
+): Promise<{ tokensLoaded: number; prompt: string } | null> {
+  return withLock(async () => {
+    if (!context || kvStateDirty) return null;
+    const result = await context.loadSession(path);
+    return { tokensLoaded: result.tokens_loaded, prompt: result.prompt };
+  });
+}
+
+// Longest common prefix of two token arrays. Exported for unit tests.
+export function commonPrefixLength(a: number[], b: number[]): number {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a[i] === b[i]) i++;
+  return i;
+}
+
+/**
+ * Persist the stable-prefix region of the current KV state to disk.
+ *
+ * The TOKEN LIST to save is bounded by rendering the system message with two
+ * probe tails whose datetimes diverge, tokenizing both, and taking the longest
+ * common token prefix — everything before the first time-derived token. A
+ * future launch's prompt matches those tokens exactly, so llama.rn resumes
+ * KV reuse from the boundary.
+ *
+ * COST CAVEAT: llama.cpp's llama_state_save_file serializes the token list
+ * truncated at tokenSize but the FULL KV tensor state of every occupied cell
+ * (the tail/history/answer cells too — there is no per-token trim in the save
+ * path). For Qwen3-4B with f16 KV that is ~147 KB/token, so the file runs to
+ * hundreds of MB and the write takes on the order of a second. The extra cells
+ * are dead weight (loadSession's next completion purges what doesn't match)
+ * but they make saves expensive — which is why session-cache debounces them.
+ *
+ * Runs as ONE lock acquisition, and callers must invoke it SYNCHRONOUSLY in
+ * the same tick as the decision to persist: any completion that slips in
+ * between could ctx_shift the prefix out of the cache and persist garbage.
+ * Callers must only invoke this after a completion whose prompt began with
+ * `prefixText` (the orchestrator's post-turn hook guarantees it).
+ *
+ * Returns the number of tokens the boundary covers (the reusable region).
+ */
+export function snapshotPrefixSession(opts: {
+  path: string;
+  prefixText: string;
+  probeTailA: string;
+  probeTailB: string;
+}): Promise<number> {
+  return withLock(async () => {
+    if (!context) throw new Error("No model loaded");
+    if (!kvStateDirty) throw new Error("No completion has populated the KV cache");
+
+    // Sequential on purpose: two concurrent JSI calls on one context are not
+    // guaranteed safe, and this whole op already holds the engine lock.
+    // The fixed user message keeps templates that dislike system-only chats
+    // happy; being identical in both probes, it cannot move the boundary.
+    // Each probe also gets a DIFFERENT template `now`: a chat template that
+    // itself injects the current date (some imported GGUFs do) then diverges
+    // at that date, the boundary lands before it, and the <64 guard below
+    // correctly refuses to persist a prefix that goes stale at midnight.
+    const PROBE_NOW = [946684800, 4102444800]; // epoch 2000-01-01 / 2100-01-01
+    const probes: number[][] = [];
+    for (const [i, tail] of [opts.probeTailA, opts.probeTailB].entries()) {
+      const formatted = await context.getFormattedChat(
+        [
+          { role: "system", content: opts.prefixText + tail },
+          { role: "user", content: "." },
+        ],
+        undefined,
+        { now: PROBE_NOW[i] },
+      );
+      probes.push((await context.tokenize(formatted.prompt)).tokens);
+    }
+    const boundary = commonPrefixLength(probes[0], probes[1]);
+    // A tiny boundary means the probes diverged inside the stable prefix —
+    // wrong inputs, or a template that injects time itself. Don't persist that.
+    if (boundary < 64) {
+      throw new Error(`Stable-prefix boundary too short: ${boundary} tokens`);
+    }
+
+    // llama.rn 0.11.4 strips file:// in loadSession but NOT in saveSession —
+    // normalize here so both accept the same expo-file-system URI form.
+    const rawPath = opts.path.startsWith("file://") ? opts.path.slice(7) : opts.path;
+    await context.saveSession(rawPath, { tokenSize: boundary });
+    return boundary;
   });
 }
 

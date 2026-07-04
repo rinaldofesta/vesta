@@ -106,4 +106,21 @@ describe("prompt content guards", () => {
       expect(buildStablePrefix(lang)).toContain("YYYY-MM-DDTHH:MM:SS");
     }
   });
+
+  test("volatile tail accepts an injected instant (session-cache probes, dev benchmark)", () => {
+    // Deterministic given the instant — no dependency on the wall clock.
+    const at = new Date(2026, 6, 4, 9, 15, 42);
+    const tail = buildVolatileTail("it", at);
+    expect(tail).toBe(buildVolatileTail("it", at));
+    expect(tail).toContain("2026-07-04T09:15 (");
+    expect(tail).toContain("Domani è 2026-07-05");
+
+    // Two different instants must produce different tails (this divergence is
+    // exactly what snapshotPrefixSession's boundary probe relies on).
+    expect(buildVolatileTail("it", new Date(2020, 0, 2, 3, 4))).not.toBe(tail);
+
+    // Omitting the argument still reads the real clock (production path).
+    jest.useFakeTimers().setSystemTime(at);
+    expect(buildVolatileTail("it")).toBe(tail);
+  });
 });

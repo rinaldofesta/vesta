@@ -26,6 +26,7 @@ import {
 import { listGgufFiles, resolveUrl, type HfFile } from "../models/hf-client";
 import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
 import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
+import { warmSessionCache } from "../orchestrator/session-warmer";
 import { useChatStore } from "./chat-store";
 
 // Serializes the "first model auto-activates" decision so two near-simultaneous
@@ -210,6 +211,10 @@ export const useModelStore = create<ModelState>((set, get) => ({
         gpuLayers: 0,
         chatTemplate: model.chatTemplate ?? undefined,
       });
+      // Same as the app-start path (chat-store.init): restore this model's
+      // persisted prefix KV before any completion. Switching back to a model
+      // whose session file is on disk skips the ~30s cold prefill.
+      await warmSessionCache();
       await setActiveModel(id);
       await get().refresh();
     } catch (err) {

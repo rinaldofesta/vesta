@@ -25,6 +25,9 @@ jest.mock("../memory-manager", () => ({
 jest.mock("../knowledge-manager", () => ({
   getKnowledgeForPrompt: jest.fn(async () => null),
 }));
+jest.mock("../session-warmer", () => ({
+  schedulePrefixPersist: jest.fn(),
+}));
 jest.mock("../../storage/database", () => ({
   getConfig: jest.fn(async () => "true"),
 }));

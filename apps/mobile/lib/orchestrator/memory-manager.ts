@@ -8,6 +8,7 @@ import {
   isLoaded,
   stopGeneration,
   getContextSize,
+  estimatePromptTokens,
 } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
 import {
@@ -49,18 +50,7 @@ let extractionRunning = false;
 let extractionAbort = false;
 const EXTRACTION_TIMEOUT_MS = 30_000;
 const EXTRACTION_MAX_TOKENS = 256;
-// Rough token estimate (~3 chars/token is conservative for Italian/English
-// BPE) plus per-message chat-template overhead. Only used to decide whether
-// the extraction turn fits the context window — precision doesn't matter.
-const TEMPLATE_TOKENS_PER_MESSAGE = 8;
 const CONTEXT_SAFETY_MARGIN = 128;
-
-function estimatePromptTokens(messages: CompletionMessage[]): number {
-  return messages.reduce(
-    (n, m) => n + Math.ceil(m.content.length / 3) + TEMPLATE_TOKENS_PER_MESSAGE,
-    0,
-  );
-}
 
 /**
  * Cancel an in-flight extraction so the user's next message isn't queued
@@ -299,9 +289,17 @@ export async function getMemoriesForPrompt(
   // decayMemories() could never fire. That made the ranking self-reinforcing
   // (memories that fell out of the top-N could never climb back) and froze out
   // newly extracted facts. Leave access metrics untouched at injection time.
-  const lines = memories.map(
-    (m) => `- (${m.category}) ${m.content}`,
-  );
+  //
+  // CANONICAL ORDER: decay ranking decides WHICH memories make the cut, but
+  // the emitted order must be time-independent. The decay score embeds
+  // Date.now(), so two calls with zero DB writes can flip the relative order
+  // as the clock advances — which would change the stable-prefix bytes,
+  // invalidating both the in-memory KV prefix (a silent ~30s re-prefill
+  // mid-session) and the on-disk cold-start session cache. Sort the selected
+  // rows by insertion order instead; the model doesn't care about bullet order.
+  const lines = [...memories]
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    .map((m) => `- (${m.category}) ${m.content}`);
   return lines.join("\n");
 }
 
