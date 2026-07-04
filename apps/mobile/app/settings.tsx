@@ -73,7 +73,13 @@ export default function SettingsScreen() {
       await setPerfSettings(next);
       await reloadActive();
     } catch (e) {
-      setPerf(prev); // revert on failure (e.g. a KV-quant combo the model rejects)
+      // Full revert on failure (e.g. a KV-quant combo the model rejects):
+      // un-persist the bad setting too — leaving it in config would make the
+      // next app launch auto-load fail and boot with no model — and reload
+      // with the previous settings so a model is loaded again right now.
+      setPerf(prev);
+      await setPerfSettings(prev).catch(() => {});
+      await reloadActive().catch(() => {});
       Alert.alert("Performance", e instanceof Error ? e.message : String(e));
     } finally {
       setPerfBusy(false);

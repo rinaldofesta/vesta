@@ -25,7 +25,7 @@ import {
 } from "../models/download-manager";
 import { listGgufFiles, resolveUrl, type HfFile } from "../models/hf-client";
 import { getDeviceCaps, type DeviceCaps } from "../models/device-caps";
-import { loadModel, unloadModel, validateGguf } from "../llm/llm-engine";
+import { loadModel, unloadModel, validateGguf, getModelInfo } from "../llm/llm-engine";
 import { warmSessionCache } from "../orchestrator/session-warmer";
 import { getPerfSettings, perfToLlmOptions } from "../llm/perf-config";
 import { useChatStore } from "./chat-store";
@@ -237,6 +237,12 @@ export const useModelStore = create<ModelState>((set, get) => ({
     if (!active) return;
     await unloadModel().catch(() => {});
     await get().activate(active.id);
+    // activate() reports load failures via store state, never by throwing —
+    // surface them here so callers (Settings updatePerf) can actually revert
+    // a rejected setting instead of silently ending up with no model loaded.
+    if (!getModelInfo().loaded) {
+      throw new Error(get().error ?? "Model reload failed");
+    }
   },
 
   remove: async (id: string) => {
