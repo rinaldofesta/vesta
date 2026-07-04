@@ -4,7 +4,8 @@
 
 import { generate, isLoaded } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
-import { buildSystemPrompt } from "./prompt-builder";
+import { buildStablePrefix, buildVolatileTail } from "./prompt-builder";
+import { schedulePrefixPersist } from "./session-warmer";
 import { parseResponse, stripThinkTags, looksLikeToolAttempt } from "./response-parser";
 import type {
   Language,
@@ -68,7 +69,10 @@ export async function processMessage(
     console.warn("[Orchestrator] Failed to fetch context:", err);
   }
 
-  const systemPrompt = buildSystemPrompt(lang, memoriesBlock, knowledgeBlock);
+  // Composed from the two halves (same bytes as buildSystemPrompt) so the
+  // stable prefix is available separately for the session-cache persist hook.
+  const stablePrefix = buildStablePrefix(lang, memoriesBlock, knowledgeBlock);
+  const systemPrompt = stablePrefix + buildVolatileTail(lang);
 
   // Build conversation messages for the LLM
   const messages: CompletionMessage[] = [
@@ -115,6 +119,17 @@ export async function processMessage(
       onToken,
     );
     const raw = result.text;
+    if (__DEV__) {
+      console.log(
+        `[Perf] promptMs=${Math.round(result.timings.promptMs)} predictedPerSecond=${result.timings.predictedPerSecond.toFixed(1)}`,
+      );
+    }
+
+    // True when this turn ran more than the single first-pass generate (query
+    // loop or malformed-JSON retry). Those paths append extra messages to the
+    // KV state, so the session-cache persist guard's token estimate (built
+    // from `messages` alone) would undercount — skip persisting those turns.
+    let extraGenerationRan = false;
 
     // Handles a successfully-parsed tool call. Extracted so both the first-pass
     // parse and the malformed-JSON retry below reuse the same dispatch logic:
@@ -138,6 +153,7 @@ export async function processMessage(
         }
         // Clear the streamed tool-call JSON, then stream the real answer.
         onStreamReset?.();
+        extraGenerationRan = true;
         const followupMessages: CompletionMessage[] = [
           ...messages,
           { role: "assistant", content: callRaw },
@@ -210,6 +226,7 @@ export async function processMessage(
         response = { type: "text", content: truncatedHint };
       } else {
         onStreamReset?.();
+        extraGenerationRan = true;
         const correction: CompletionMessage[] = [
           ...messages,
           // Cap the (possibly runaway/repetitive) bad output so it can't dominate
@@ -251,6 +268,17 @@ export async function processMessage(
     } else {
       // Plain text response — keep think tags for styled UI rendering
       response = { type: "text", content: raw };
+    }
+
+    // Fire-and-forget: persist the stable prefix's KV state for the next cold
+    // launch, if the on-disk cache is stale. Only after a clean single-generate
+    // turn: a user Stop can interrupt prefill mid-prefix, and multi-generate
+    // paths break the guard's token estimate (see extraGenerationRan). Must be
+    // called BEFORE extractMemories: the persist path is synchronous up to its
+    // engine-lock enqueue, so the snapshot enters the FIFO lock queue ahead of
+    // the extraction generate and captures the just-finished turn's KV state.
+    if (!result.stoppedByUser && !extraGenerationRan) {
+      schedulePrefixPersist(stablePrefix, lang, messages, result.tokensPredicted);
     }
 
     // Fire-and-forget: extract memories from this exchange — but skip turns that

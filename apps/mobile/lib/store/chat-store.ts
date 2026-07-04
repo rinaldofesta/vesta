@@ -30,6 +30,8 @@ import {
   stopGeneration as llmStopGeneration,
 } from "../llm/llm-engine";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
+import { warmSessionCache } from "../orchestrator/session-warmer";
+import { clearPrefixSessionCache } from "../llm/session-cache";
 import { startVestaService } from "../native/vesta-service";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -122,6 +124,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             gpuLayers: 0,
             chatTemplate: active.chatTemplate ?? undefined,
           });
+          // Cold-start prefix cache: restore the stable prefix's KV state from
+          // disk BEFORE any completion, so the first turn skips the ~30s cold
+          // prefill. Awaited to guarantee the ordering; failures start cold.
+          await warmSessionCache();
         } else {
           await setModelState(active.id, "error");
         }
@@ -142,6 +148,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendMessage: async (text: string) => {
     if (get().isGenerating) return; // prevent concurrent sends
+
+    // Dev-only diagnostics, driven from the chat input. Result messages go
+    // through the normal persistence path (conversation row + saveMessage):
+    // state-only messages would break sendMessage's `currentMsgs.length === 0`
+    // lazy-creation sentinel and orphan every later message of the chat.
+    if (__DEV__ && (text.trim() === "/benchmark-prefill" || text.trim() === "/session-clear")) {
+      const postInfo = async (content: string) => {
+        const msg: Message = {
+          id: uuid(),
+          conversationId: get().conversationId,
+          role: "assistant",
+          content,
+          createdAt: Date.now(),
+        };
+        try {
+          if (get().messages.length === 0) {
+            await createConversation(msg.conversationId);
+            const title = text.trim();
+            set({ conversationTitle: title });
+            await updateConversationTitle(msg.conversationId, title);
+          }
+          await saveMessage(msg);
+          await touchConversation(msg.conversationId);
+        } catch (err) {
+          console.error("Failed to persist dev message:", err);
+        }
+        set((s) => ({ messages: [...s.messages, msg] }));
+      };
+      if (text.trim() === "/session-clear") {
+        await clearPrefixSessionCache();
+        await postInfo("Session cache cleared. Riavvia l'app per misurare un cold start.");
+        return;
+      }
+      set({ isGenerating: true, streamingText: "", error: null });
+      try {
+        // Lazy import keeps lib/dev (incl. the frozen V2 prompt) out of the
+        // release bundle's startup path; the __DEV__ guard alone only removes
+        // the call site, not a hoisted static import.
+        const { runPrefillBenchmark } = await import("../dev/prefill-benchmark");
+        const report = await runPrefillBenchmark((line) => {
+          console.log("[Benchmark]", line);
+          set((s) => ({ streamingText: s.streamingText + line + "\n" }));
+        });
+        console.log("[Benchmark] report:\n" + report);
+        await postInfo("```\n" + report + "\n```");
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        set({ isGenerating: false, streamingText: "" });
+      }
+      return;
+    }
 
     // Moving on with a new message implicitly declines any unconfirmed action.
     if (get().pendingConfirmation) {
