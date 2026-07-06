@@ -129,7 +129,7 @@
 
 **Known limitation / future work:** the volatile date context still lives at the end of the system prompt, so conversation history after it re-prefills whenever the minute changes between turns. Datetime is minute-precision, so same-minute turns are pure appends; the full fix (per-turn date injection replayed byte-identically in history) is deferred.
 
-**Exit gate:** Measurable prefill-latency reduction on repeated prompts on a real device, with no tool-accuracy regression (Fase 0 benchmark holds). **Measured 2026-07-04: warm turns 6.6x faster (prompt restructure), cold start 13.4x faster (persistent prefix cache); Fase 0 gate re-verified 2026-07-01 (98.9% tool / 100% JSON).** Remaining: cheap-wins settings (threads/KV-quant/mlock, PR #17 open).
+**Exit gate:** Measurable prefill-latency reduction on repeated prompts on a real device, with no tool-accuracy regression (Fase 0 benchmark holds). **Measured 2026-07-04: warm turns 6.6x faster (prompt restructure), cold start 13.4x faster (persistent prefix cache); Fase 0 gate re-verified 2026-07-01 (98.9% tool / 100% JSON).** Cheap-wins settings shipped and device-verified 2026-07-04 (PR #17). **Fase 4 complete** (PRs #18, #19, #20, #17).
 
 ---
 
