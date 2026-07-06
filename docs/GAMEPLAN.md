@@ -16,6 +16,20 @@
 
 ---
 
+## Roadmap at a glance
+
+| Fase | Scope | Status | Exit gate |
+|---|---|---|---|
+| **0 — Model Validation** | Benchmark models + system prompt on Ollama | ✅ Done (2026-03-09) | ≥90% tool / ≥95% JSON on easy+medium — met at 97.8% / 98.9% |
+| **1 — Android MVP** | 4 tools, chat UI, llama.rn, foreground service | ✅ Done (2026-06-25, v0.1.0) | "svegliami domani alle 7 e mezza" → alarm set, real device, offline |
+| **2 — Core Polish** | All 10 tools, query loop, history, settings, JSON retry | ✅ Done (2026-07-01) | 10/10 tools on device; calendar read returns real data |
+| **3 — Document Intelligence** | PDF/DOCX/TXT RAG, fully on device | ✅ Done (2026-07-01) | PDF question → grounded answer in airplane mode |
+| **4 — On-device Performance** | KV-cache prompt layout (V3 then V4), cold-start session cache, perf settings | ✅ Done (2026-07-06) | Warm turns: full re-prefill → pure appends (flat ~6s); cold start 13.4x; Fase 0 gate holds (98.9% / 100%) |
+| **5 — MCP + Advanced** | Local MCP server, tutor, swarm, offline knowledge | 📋 Future | Per-feature, defined when each starts |
+| *Parked* | Mac Hub (LAN 70B delegation), iOS port | ⏸️ Parked | — |
+
+---
+
 ## Fase 0: Model Validation (Week 1)
 
 **Goal:** Choose THE model and THE system prompt. Everything else depends on this.
@@ -190,6 +204,8 @@ Track key decisions here as you make them during development.
 | 2026-06-25 | Fase 2 code-complete | All 10 tools (calls, SMS, contacts, calendar read) + query loop + error recovery shipped across PRs #11–#13, CI-verified (typecheck/lint/tests/Android build). On-device verification of the new contacts/calendar tools is pending a rebuild; the exit-gate scenario ("che appuntamenti ho domani?" reading real calendar data) has not yet been run on hardware. |
 | 2026-07-01 | Fase 2 complete (verified on device) | Rebuilt on a Pixel 10 Pro after fixing an autolinking gap (expo-contacts/expo-calendar were not compiled into the APK, crashing boot). Exit gate met on hardware, fully offline: "che appuntamenti ho domani?" reads real calendar data; timer, contact search, and confirm-gated calls also verified on device. Added the missing malformed-JSON retry-once-with-correction (GAMEPLAN Fase 2 error-handling requirement). |
 | 2026-07-01 | Fase 3 complete (verified on device) | On-device document RAG: `query_document` tool + a second llama.rn context running the Nomic embed model + brute-force cosine over BLOB-stored vectors (no sqlite-vec — Expo SQLite can't load extensions). Exit gate met on a Pixel 10 Pro, fully offline (airplane mode): imported a PDF, asked a factual question, got a grounded answer. PDF needed DOM polyfills (DOMException/DOMMatrix) to run pdfjs under Hermes. |
+| 2026-07-04 | Fase 4 complete (measured on device) | Stable-prefix prompt restructure (PR #18): warm turns 6.6x faster. Cold-start prefix session cache (PR #20): first message 37.3s → 2.8s (13.4x); llama.cpp serializes the FULL KV state so the file is ~215MB — saves debounced. Perf settings (PR #17): q8_0 KV + flash attention verified working; halves KV memory, ~1.5x slower on CPU — defaults off. |
+| 2026-07-06 | V4 per-turn date injection (PR #22) | Closes the deferred history-re-prefill limitation: fully static system prompt + [Contesto temporale: ...] line per user message, rendered from each message's createdAt — history replays byte-identically, every turn a pure KV append (warm turns flat ~6s vs V3's 5→12s growth). Also fixed a since-Fase-1 bug: the current user message reached the model twice. |
 
 ---
 
