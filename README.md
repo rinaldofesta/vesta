@@ -210,7 +210,7 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 | **Fase 1** — Android MVP | ✅ Done | Chat UI, core tools, orchestrator, history, memory, in-app model manager |
 | **Fase 2** — Core Polish | ✅ Done | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, malformed-JSON retry — verified on a Pixel 10 Pro, fully offline |
 | **Fase 3** — Document Intelligence | ✅ Done | Import PDF / Word / text / Markdown, on-device embeddings (Nomic) + brute-force cosine retrieval, `query_document` — grounded offline answers, verified on a Pixel 10 Pro |
-| **Fase 4** — On-device Performance | 🚧 In progress | Prompt restructuring for KV-cache reuse, perf settings (threads / KV-quant / mlock), cold-start prefix-KV cache |
+| **Fase 4** — On-device Performance | ✅ Done | KV-cache prompt layout (static system prompt + per-turn date context): warm turns are pure appends; cold-start prefix cache (first message 13.4x faster); tunable threads / KV-quant / mlock — all measured on a Pixel 10 Pro |
 | **Fase 5** — MCP + Advanced | 📋 Future | Expose tools as a local MCP server for other agents, accessibility |
 | _Parked_ — Mac Hub & iOS | ⏸️ Parked | Android-first focus; LAN 70B hub and MLX-Swift iOS port deferred |
 

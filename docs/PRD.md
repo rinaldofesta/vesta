@@ -206,14 +206,14 @@ Implementation: Qwen3 4B already supports 100+ languages natively. No model chan
 Each phase has a clear exit gate: what must be TRUE before moving to the next phase. Do NOT advance without hitting the gate.
 
 ```
-FASE 0  [Week 1]        Model Validation
+FASE 0  [Done 2026-03-09]   Model Validation
   ├─ Test models on Mac with Ollama
   ├─ 50 prompts IT + 50 prompts EN covering 4 core tools
   ├─ Benchmark: accuracy, latency, JSON validity per model
   └─ EXIT GATE: ≥90% function calling accuracy on clear commands
                 in both IT and EN for the chosen model + system prompt
 
-FASE 1  [Week 2-4]      Android MVP
+FASE 1  [Done 2026-06-25]   Android MVP (v0.1.0)
   ├─ React Native + Expo project
   ├─ llama.cpp native module (official Android binding)
   ├─ Foreground Service (model stays in memory)
@@ -222,7 +222,7 @@ FASE 1  [Week 2-4]      Android MVP
   └─ EXIT GATE: Say "Hey Vesta, svegliami domani alle 7" on a real
                 Android phone → alarm is set. End to end, offline.
 
-FASE 2  [Week 5-7]      Core Polish
+FASE 2  [Done 2026-07-01]   Core Polish
   ├─ Add remaining system tools: make_call, send_sms, set_timer, navigate
   ├─ Add read tools: get_calendar_events, search_contacts
   ├─ Conversation history + multi-turn context
@@ -230,7 +230,7 @@ FASE 2  [Week 5-7]      Core Polish
   └─ EXIT GATE: All 10 tools work reliably. Multi-turn conversation
                 maintains context across 5+ messages.
 
-FASE 3  [Week 8-10]     Document Intelligence (RAG)
+FASE 3  [Done 2026-07-01]   Document Intelligence (RAG)
   ├─ PDF/DOCX/TXT parser
   ├─ Chunking + embedding via llama.cpp (nomic-embed-text)
   ├─ sqlite-vec for vector search
@@ -238,14 +238,16 @@ FASE 3  [Week 8-10]     Document Intelligence (RAG)
   └─ EXIT GATE: Upload a 20-page PDF, ask a specific question,
                 get a correct answer with source reference. Offline.
 
-FASE 4  [In progress]   On-device Performance
-  ├─ Prompt restructuring for KV-cache reuse (stable prefix / volatile tail)
+FASE 4  [Done 2026-07-06]   On-device Performance
+  ├─ Prompt restructuring for KV-cache reuse: V3 (stable prefix /
+  │  volatile tail), then V4 (static system prompt + per-turn date
+  │  context, byte-stable history — every turn a pure KV append)
   ├─ Perf settings: CPU threads, KV-cache quantization (q8_0), mlock
   ├─ Persistent prefix-KV cache for cold start (saveSession/loadSession)
-  ├─ Benchmark: prefill latency + tok/s on device, before/after
-  └─ EXIT GATE: Measurable prefill-latency reduction on repeated prompts
-                on a real device, with no tool-accuracy regression
-                (Fase 0 benchmark holds).
+  ├─ Benchmark: prefill latency via timings.promptMs, 3 prompt layouts
+  └─ EXIT GATE MET (Pixel 10 Pro): warm turns from full re-prefill to
+                flat ~6s appends; cold start 37.3s → 2.8s (13.4x);
+                Fase 0 benchmark holds (98.9% tool / 100% JSON).
 
 FASE 5  [Future]        MCP + Advanced
   ├─ MCP Server: expose Vesta tools as MCP endpoints (local agent infra)
