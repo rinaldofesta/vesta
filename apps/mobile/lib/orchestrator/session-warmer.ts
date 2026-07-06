@@ -11,15 +11,18 @@ import {
   persistPrefixSession,
   restorePrefixSession,
 } from "../llm/session-cache";
-import { buildStablePrefix, buildVolatileTail } from "./prompt-builder";
+import { buildStablePrefix, annotateUserMessage } from "./prompt-builder";
 import { getMemoriesForPrompt } from "./memory-manager";
 import { getKnowledgeForPrompt } from "./knowledge-manager";
 import { getConfig } from "../storage/database";
 import type { Language } from "./types";
 
-// Probe instants for locating the stable/volatile token boundary: any two
-// dates produce tails that diverge at the first time-derived token. The exact
-// values never reach the model — only their tokenizations are compared.
+// Probe instants for locating the stable/volatile token boundary: two probe
+// first-user-messages rendered at different dates diverge at the first
+// time-derived token of their [Contesto temporale: ...] line (the V4 system
+// prompt itself is fully static). The exact values never reach the model —
+// only their tokenizations are compared. Different weekdays on purpose, so
+// the divergence lands at the very first field of the annotation.
 const PROBE_DATE_A = new Date(2020, 0, 2, 3, 4);
 const PROBE_DATE_B = new Date(2031, 10, 25, 23, 58);
 
@@ -66,8 +69,8 @@ export function schedulePrefixPersist(
   }
   persistPrefixSession(
     stablePrefix,
-    buildVolatileTail(lang, PROBE_DATE_A),
-    buildVolatileTail(lang, PROBE_DATE_B),
+    annotateUserMessage(lang, PROBE_DATE_A, "."),
+    annotateUserMessage(lang, PROBE_DATE_B, "."),
   ).catch((err) => {
     console.warn("[SessionWarmer] persist failed:", err);
   });

@@ -444,64 +444,43 @@ export const TOOLS_V1: ToolDefinition[] = [
 
 ### 3.3 System Prompt Template
 
-> **Nota (Fase 4):** l'ordinamento del prompt è cambiato — la fonte di verità è
-> `apps/mobile/lib/orchestrator/prompt-builder.ts`. Il prompt è diviso in un
-> PREFISSO STABILE (persona + formato + regole + tool schema + memorie/knowledge)
-> e una CODA VOLATILE (contesto data/ora, precisione al minuto) in fondo, così
-> llama.rn riusa la KV cache del prefisso tra i turni. Mai interpolare data/ora
-> sopra il blocco dei tool. Lo sketch qui sotto riflette il nuovo ordinamento.
+> **Nota (Fase 4, V4):** la struttura del prompt è cambiata — la fonte di verità è
+> `apps/mobile/lib/orchestrator/prompt-builder.ts`. Il system prompt è
+> completamente STATICO (persona + formato + regole + tool schema +
+> memorie/knowledge, byte-identico tra i turni); il contesto data/ora viaggia in
+> una riga `[Contesto temporale: ...]` anteposta a OGNI messaggio utente
+> (`buildTurnContext`/`annotateUserMessage`), con precisione al minuto. I turni
+> storici la rendono dal `createdAt` salvato del messaggio, quindi la storia
+> replayata è byte-identica per sempre e ogni turno è un puro append nella KV
+> cache di llama.rn. Mai interpolare data/ora nel system prompt.
 
 ```typescript
-// lib/orchestrator/prompts.ts
+// lib/orchestrator/prompt-builder.ts (sketch)
 
-export function buildSystemPrompt(params: {
-  tools: ToolDefinition[];
-  currentDatetime: string;
-  timezone: string;
-  language: string;
-  memories: string[];
-}): string {
-
-  const toolsDescription = params.tools.map(t => {
-    const paramsDesc = Object.entries(t.parameters.properties)
-      .map(([k, v]) => `    "${k}": ${v.description} (${v.type}${v.format ? ', formato: ' + v.format : ''})`)
-      .join('\n');
-    const required = t.parameters.required.join(', ');
-    return `- ${t.name}: ${t.description}\n  Parametri:\n${paramsDesc}\n  Obbligatori: ${required}`;
-  }).join('\n\n');
-
-  const memoriesSection = params.memories.length > 0
-    ? `\nInformazioni sull'utente:\n${params.memories.map(m => `- ${m}`).join('\n')}\n`
-    : '';
-
-  // PREFISSO STABILE — byte-identico tra i turni (niente data/ora qui!)
-  return `Sei un assistente personale locale. Rispondi in ${params.language}.
+// SYSTEM PROMPT — completamente statico, niente data/ora
+export function buildStablePrefix(lang, memoriesBlock?, knowledgeBlock?): string {
+  return `Sei Vesta, un assistente personale locale. Rispondi in ${lang}.
 
 Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSON valido:
-{
-  "tool": "nome_del_tool",
-  "parameters": { ... },
-  "message": "Messaggio di conferma per l'utente"
-}
+{ "tool": "...", "parameters": { ... }, "message": "..." }
 
-Quando l'utente fa una domanda o vuole conversare, rispondi normalmente in testo.
-
-IMPORTANTE:
-- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS" (usa la data reale dal contesto temporale in fondo)
-- Gli orari devono essere in formato HH:MM (es. "07:30" per le 7 e mezza)
-- "Giovedì prossimo" significa il prossimo giovedì dalla data corrente
-- "Stasera" significa oggi, dalle 19:00 se non specificato
-- Se un parametro è ambiguo, chiedi chiarimento all'utente
+REGOLE:
+- I messaggi dell'utente iniziano con una riga [Contesto temporale: ...]; usala per interpretare date e orari, non citarla
+- Le date in ISO 8601 "YYYY-MM-DDTHH:MM:SS"; ricava la data dal [Contesto temporale: ...] del messaggio PIÙ RECENTE
+- ... (regole di routing e default orari)
 
 Strumenti disponibili:
+${toolsBlock}
+${memoriesSection}${knowledgeSection}`;
+}
 
-${toolsDescription}
-
-Se la richiesta non corrisponde a nessuno strumento, usa "general_chat" e rispondi normalmente.
-${memoriesSection}
-Contesto temporale corrente:
-Data e ora: ${params.currentDatetime} (${params.timezone}). Domani è il giorno successivo a oggi.`;
-  // ^ CODA VOLATILE — ricostruita ogni turno, sempre per ultima
+// CONTESTO PER TURNO — funzione pura di (lang, at); la storia si rende dal
+// createdAt del messaggio, il turno corrente dal suo timestamp di invio
+export function buildTurnContext(lang, at: Date): string {
+  return `[Contesto temporale: ${dayOfWeek} ${datetimeMinuti} (${timezone}). Oggi: ${today}. Domani: ${tomorrow}]`;
+}
+export function annotateUserMessage(lang, at, text) {
+  return `${buildTurnContext(lang, at)}\n${text}`;
 }
 ```
 

@@ -1,34 +1,17 @@
-// Builds the system prompt and per-turn time context for Vesta, localized by
-// language.
+// FROZEN copy of the V3 production prompt builder (PR #18 through PR #20:
+// stable prefix + volatile date tail), kept ONLY as the middle arm of the dev
+// prefill benchmark (lib/dev/prefill-benchmark.ts). Its defining property is
+// the one the V4 restructure removed: the volatile date tail sits BETWEEN the
+// stable prefix and the conversation history, so every minute boundary
+// re-prefills the whole history.
 //
-// Derived from the Fase 0 V2 prompt (scripts/benchmark/system-prompt.ts, 97.8%
-// tool accuracy; verbatim baselines archived at scripts/benchmark/archive/),
-// extended since with the Fase 2 tool-routing rules and the memories/knowledge
-// sections. The two files no longer match line-for-line, but they MUST keep the
-// same structure and shared wording: the benchmark validates the prompt shape
-// production uses. Edit them together.
-//
-// Fase 4 structure, V4 — STATIC SYSTEM PROMPT + PER-TURN TIME CONTEXT:
-//   system prompt: persona + JSON format + RULES + tool schemas + fallback
-//                  + memories/knowledge (semi-stable — changes only when a
-//                  memory is extracted or a knowledge file is edited).
-//                  Contains NOTHING derived from the current time.
-//   time context:  a [Contesto temporale: ...] line PREPENDED to each user
-//                  message — the current turn's from the wall clock, each
-//                  history turn's from that message's stored createdAt, so a
-//                  replayed history is byte-identical forever.
-// llama.rn reuses the KV cache for the longest common token prefix with the
-// previous completion. V3 kept a volatile date tail at the end of the system
-// prompt, BETWEEN the cached prefix and the history — so every minute boundary
-// re-prefilled the whole conversation (measured on a Pixel 10 Pro: warm turns
-// grew 6.7s → 15s as history accumulated). With the date moving into each
-// user message, every turn is a pure KV append. Never interpolate date/time
-// values into the system prompt — __tests__/prompt-builder.test.ts locks this
-// invariant.
+// Changes vs the frozen commit: import paths and renamed exports
+// (buildStablePrefixV3/buildVolatileTailV3). Do not "fix" or update the
+// prompt text — a frozen baseline that drifts stops being a baseline.
 
 import { formatToolsForPrompt } from "../tools/tool-registry";
-import { localDateStr, addDays, pad2 } from "./date-utils";
-import type { Language } from "./types";
+import { localDateStr, addDays, pad2 } from "../orchestrator/date-utils";
+import type { Language } from "../orchestrator/types";
 
 // LOCAL today/tomorrow — using toISOString() (UTC) made these off by a day near
 // midnight in non-UTC zones, which is wrong for an alarm/calendar assistant.
@@ -55,79 +38,18 @@ function getDayOfWeek(now: Date, lang: Language): string {
 // Minute precision, LOCAL time. Seconds are deliberately omitted: no prompt
 // rule or tool operates below HH:MM, and every extra changing token moves the
 // KV-cache divergence point earlier (with minute precision, turns sent within
-// the same minute render the same time context).
+// the same minute become pure appends to the cached context).
 function formatDatetime(now: Date): string {
   return `${localDateStr(now)}T${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 }
 
-// Timezone string, read ONCE per process. Two reasons: (a) constructing an
-// Intl.DateTimeFormat per history message per turn is measurable Hermes
-// overhead on the hot path; (b) freezing the zone keeps history annotations
-// byte-stable even if the OS timezone changes mid-session — the new zone
-// applies from the next app launch, which is a cold start anyway.
-let cachedTimezone: string | null = null;
-function getTimezone(): string {
-  if (cachedTimezone === null) {
-    cachedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  }
-  return cachedTimezone;
-}
-
-// The [ ... ] markers that open a per-turn time context, per language. Shared
-// with the RULES text below and with callers that need to recognize (not
-// build) an annotation — e.g. the memory extractor's instruction.
-export const TIME_CONTEXT_MARKER: Record<Language, string> = {
-  it: "[Contesto temporale:",
-  en: "[Time context:",
-};
-
 /**
- * PER-TURN TIME CONTEXT: one bracketed line carrying everything the old V3
- * volatile tail carried (minute-precision datetime, timezone, day of week,
- * today, tomorrow — small models are unreliable at date arithmetic, so
- * tomorrow stays precomputed).
- *
- * Deterministic in (lang, at) WITHIN a process: the orchestrator renders
- * history turns from each message's stored createdAt, so the same message
- * always re-renders to the same bytes — the KV-cache invariant this whole
- * layout exists for. Across processes the timezone is re-read (see
- * getTimezone), so a device-zone change re-renders history once, at the next
- * launch — a cold start anyway. Local-time fields (getHours/getDay) use the
- * zone rules AT the rendered instant, so DST transitions do not drift bytes.
+ * STABLE PREFIX: persona, response format, rules, tool schemas, fallback, and
+ * the semi-stable memories/knowledge sections. Byte-identical across turns as
+ * long as memories and knowledge are unchanged — this is the part llama.rn
+ * keeps in the KV cache. Must contain NOTHING derived from the current time.
  */
-export function buildTurnContext(lang: Language, at: Date): string {
-  const datetime = formatDatetime(at);
-  const timezone = getTimezone();
-  const dayOfWeek = getDayOfWeek(at, lang);
-  const today = getToday(at);
-  const tomorrow = getTomorrow(at);
-
-  if (lang === "it") {
-    return `${TIME_CONTEXT_MARKER.it} ${dayOfWeek} ${datetime} (${timezone}). Oggi: ${today}. Domani: ${tomorrow}]`;
-  }
-  return `${TIME_CONTEXT_MARKER.en} ${dayOfWeek} ${datetime} (${timezone}). Today: ${today}. Tomorrow: ${tomorrow}]`;
-}
-
-/**
- * A user message as the model sees it: the turn's time context on the first
- * line, the user's text after it.
- */
-export function annotateUserMessage(
-  lang: Language,
-  at: Date,
-  text: string,
-): string {
-  return `${buildTurnContext(lang, at)}\n${text}`;
-}
-
-/**
- * STATIC SYSTEM PROMPT: persona, response format, rules, tool schemas,
- * fallback, and the semi-stable memories/knowledge sections. Byte-identical
- * across turns as long as memories and knowledge are unchanged — this is the
- * part llama.rn keeps in the KV cache. Must contain NOTHING derived from the
- * current time.
- */
-export function buildStablePrefix(
+export function buildStablePrefixV3(
   lang: Language,
   memoriesBlock?: string | null,
   knowledgeBlock?: string | null,
@@ -160,9 +82,8 @@ Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSO
 Quando l'utente fa una domanda generica o vuole conversare, rispondi normalmente in testo libero. NON generare JSON per domande generiche, richieste creative, o conversazioni.
 
 REGOLE:
-- I messaggi dell'utente iniziano con una riga [Contesto temporale: ...] con data, ora e giorno correnti. Non è testo dell'utente: usala per interpretare date e orari, non citarla e non menzionarla nelle risposte
 - Gli orari devono essere in formato HH:MM 24 ore (es. "07:30" per le 7 e mezza, "15:00" per le 3 del pomeriggio)
-- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS"; ricava la data effettiva dal [Contesto temporale: ...] del messaggio PIÙ RECENTE dell'utente
+- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS"; ricava la data effettiva dal Contesto temporale corrente in fondo
 - "Stasera" significa oggi; usa le 19:00 come orario predefinito se non specificato. "Stanotte" significa oggi dopo le 23:00 o domani prima delle 06:00
 - "Mattina" senza orario specifico: usa le 09:00. "Pomeriggio" senza orario: usa le 15:00
 - I parametri NON obbligatori possono essere omessi. NON chiedere end time, durata, o altri parametri opzionali
@@ -198,9 +119,8 @@ When the user asks you to perform an action, respond EXCLUSIVELY with valid JSON
 When the user asks a general question or wants to chat, respond normally in plain text. Do NOT generate JSON for general questions, creative requests, or conversations.
 
 RULES:
-- User messages start with a [Time context: ...] line carrying the current date, time and weekday. It is not the user's text: use it to interpret dates and times, do not quote it and do not mention it in replies
 - Times must be in HH:MM 24-hour format (e.g., "07:30" for 7:30 AM, "15:00" for 3 PM)
-- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS"; take the actual date from the [Time context: ...] of the user's MOST RECENT message
+- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS"; take the actual date from the Current date context at the end
 - "Tonight" means today; default to 19:00 if no specific time given. "Late tonight" means today after 23:00 or tomorrow before 06:00
 - "Morning" without specific time: default to 09:00. "Afternoon" without time: default to 15:00
 - Non-required parameters CAN be omitted. Do NOT ask for end time, duration, or other optional parameters
@@ -221,4 +141,29 @@ Available tools:
 ${toolsBlock}
 
 If the request doesn't match any action tool, respond in plain text as general conversation.${memoriesSection}${knowledgeSection}`;
+}
+
+/**
+ * VOLATILE TAIL: the current date context. The only part of the system prompt
+ * allowed to change between turns. Kept as small as possible — every token
+ * here (and everything after it) re-prefills whenever the minute changes.
+ *
+ * `now` is injectable so the session cache can build probe tails at fixed
+ * instants (to find the stable/volatile token boundary) and the dev prefill
+ * benchmark can step a deterministic clock. Production callers omit it.
+ */
+export function buildVolatileTailV3(lang: Language, now: Date = new Date()): string {
+  const datetime = formatDatetime(now);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tomorrow = getTomorrow(now);
+  const today = getToday(now);
+  const dayOfWeek = getDayOfWeek(now, lang);
+
+  if (lang === "it") {
+    return `\n\nContesto temporale corrente:
+Data e ora: ${datetime} (${timezone}). Oggi è ${dayOfWeek}, ${today}. Domani è ${tomorrow}.`;
+  }
+
+  return `\n\nCurrent date context:
+Date and time: ${datetime} (${timezone}). Today is ${dayOfWeek}, ${today}. Tomorrow is ${tomorrow}.`;
 }

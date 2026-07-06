@@ -106,12 +106,14 @@ export async function extractMemories(
 Rispondi con SOLO un array JSON valido di oggetti {"category": "...", "content": "..."} — niente testo, niente spiegazioni.
 Categorie valide: preference, fact, routine, contact_note, topic_interest
 Ignora le sezioni "Cosa sai dell'utente" e "Contesto personale dell'utente": sono informazioni già note, non estrarle di nuovo.
+Ignora le righe [Contesto temporale: ...]: sono annotazioni di sistema, non fatti dell'utente.
 Se non ci sono fatti nuovi, rispondi []
 Non inventare nulla. Estrai SOLO informazioni esplicitamente dette dall'utente nel suo ultimo messaggio.`
         : `Extract the NEW personal facts the user stated in their LAST message above.
 Reply with ONLY a valid JSON array of {"category": "...", "content": "..."} objects — no prose, no explanation.
 Valid categories: preference, fact, routine, contact_note, topic_interest
 Ignore the "What you know about the user" and "User's personal context" sections — they are already known, do not extract them again.
+Ignore [Time context: ...] lines — they are system annotations, not user facts.
 If there are no new facts, reply []
 Do not invent anything. Extract ONLY information the user explicitly stated in their last message.`;
 

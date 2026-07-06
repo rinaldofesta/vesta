@@ -170,10 +170,12 @@ That's it for MVP. More tables (documents, memories, scheduled_tasks) are added 
 
 ## System Prompt Template
 
-**Source of truth: `apps/mobile/lib/orchestrator/prompt-builder.ts`.** Since Fase 4 the prompt is split into a STABLE PREFIX and a VOLATILE TAIL for llama.rn KV-cache reuse. The prefix MUST stay byte-stable across turns: never interpolate the date, time, or anything else per-turn above the tool-schema block — a single changed token there re-prefills the whole prompt (~17s measured on device).
+**Source of truth: `apps/mobile/lib/orchestrator/prompt-builder.ts`.** Since Fase 4 (V4) the system prompt is fully STATIC and the current date rides in a per-turn time-context line prepended to each user message, for llama.rn KV-cache reuse. Two invariants, both locked by `__tests__/prompt-builder.test.ts` and `__tests__/history-stability.test.ts`:
+1. Never interpolate the date, time, or anything else per-turn into the system prompt — a single changed token there re-prefills the whole conversation (~30s+ measured on device).
+2. History user messages re-render their time context from each message's stored `createdAt` (a pure function), so a replayed history is byte-identical forever and every turn is a pure KV append.
 
 ```
-┌─ STABLE PREFIX (byte-identical across turns) ─────────────────
+┌─ SYSTEM PROMPT (fully static — byte-identical across turns) ──
 You are Vesta, a personal assistant running locally on the user's device.
 You respond in {{language}}.
 
@@ -187,8 +189,9 @@ When the user asks you to perform an action, respond ONLY with valid JSON:
 When the user asks a question or wants to chat, respond normally in text.
 
 RULES:
+- User messages start with a [Time context: ...] line; use the MOST RECENT one to interpret dates and times, never quote it
 - Times must be in HH:MM format (e.g., "07:30")
-- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS" (take the actual date from the current date context below)
+- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS"
 - "Tonight" means today, from 19:00 if no time given. "Late tonight" means today after 23:00 or tomorrow before 06:00
 - If a REQUIRED parameter is ambiguous, ask the user for clarification
 - Never make up information you don't have
@@ -202,9 +205,9 @@ If the request doesn't match any tool, respond as general conversation.
 {{memories_section}}      ← semi-stable: changes only when memories change
 {{knowledge_section}}     ← semi-stable: changes only when files change
 └───────────────────────────────────────────────────────────────
-┌─ VOLATILE TAIL (rebuilt every turn — keep it small, keep it last) ─
-Current date context:
-Date and time: {{datetime_minute_precision}} ({{timezone}}). Today is {{day_of_week}}, {{today}}. Tomorrow is {{tomorrow}}.
+┌─ EACH USER MESSAGE (history renders from its createdAt) ──────
+[Time context: {{day_of_week}} {{datetime_minute_precision}} ({{timezone}}). Today: {{today}}. Tomorrow: {{tomorrow}}]
+{{user_text}}
 └───────────────────────────────────────────────────────────────
 ```
 

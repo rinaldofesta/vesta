@@ -4,7 +4,7 @@
 
 import { generate, isLoaded } from "../llm/llm-engine";
 import type { CompletionMessage } from "../llm/llm-engine";
-import { buildStablePrefix, buildVolatileTail } from "./prompt-builder";
+import { buildStablePrefix, annotateUserMessage } from "./prompt-builder";
 import { schedulePrefixPersist } from "./session-warmer";
 import { parseResponse, stripThinkTags, looksLikeToolAttempt } from "./response-parser";
 import type {
@@ -46,6 +46,11 @@ export async function processMessage(
   // data). This clears the streamed tool-call JSON before the answer streams,
   // so the user sees a clean reply instead of "JSON…answer".
   onStreamReset?: () => void,
+  // The instant this turn's time context renders from. Callers that persist
+  // the message pass its createdAt so the live render and every future
+  // history replay come from the SAME instant — byte-identical by
+  // construction, which is the KV-cache invariant. Defaults to now.
+  sentAt: Date = new Date(),
 ): Promise<OrchestratorResponse> {
   if (!isLoaded()) {
     return { type: "error", error: "No model loaded" };
@@ -69,21 +74,26 @@ export async function processMessage(
     console.warn("[Orchestrator] Failed to fetch context:", err);
   }
 
-  // Composed from the two halves (same bytes as buildSystemPrompt) so the
-  // stable prefix is available separately for the session-cache persist hook.
+  // The system prompt is fully STATIC (V4): the date lives in a per-turn
+  // [Contesto temporale: ...] line on each user message instead of a volatile
+  // tail. History turns render from their stored createdAt — a pure function,
+  // so the replayed history is byte-identical across turns and the whole
+  // conversation stays a growing KV-cache prefix.
   const stablePrefix = buildStablePrefix(lang, memoriesBlock, knowledgeBlock);
-  const systemPrompt = stablePrefix + buildVolatileTail(lang);
 
   // Build conversation messages for the LLM
   const messages: CompletionMessage[] = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: stablePrefix },
   ];
 
   // Add recent history (trimmed to avoid blowing context)
   const recent = history.slice(-MAX_HISTORY_MESSAGES);
   for (const msg of recent) {
     if (msg.role === "user") {
-      messages.push({ role: "user", content: msg.content });
+      messages.push({
+        role: "user",
+        content: annotateUserMessage(lang, new Date(msg.createdAt), msg.content),
+      });
     } else if (msg.role === "assistant") {
       let content = msg.content;
       // Append tool result so the LLM can see what happened in follow-up turns
@@ -101,8 +111,11 @@ export async function processMessage(
     }
   }
 
-  // Add current user message
-  messages.push({ role: "user", content: userText });
+  // Add current user message with this turn's time context.
+  messages.push({
+    role: "user",
+    content: annotateUserMessage(lang, sentAt, userText),
+  });
 
   try {
     // A background memory-extraction pass may still hold the engine lock.
@@ -154,15 +167,21 @@ export async function processMessage(
         // Clear the streamed tool-call JSON, then stream the real answer.
         onStreamReset?.();
         extraGenerationRan = true;
+        // Annotated like every user message: the RULES point date resolution
+        // at the MOST RECENT user message's time context, and this synthetic
+        // turn is now it. Never persisted, so no replay-stability concern.
         const followupMessages: CompletionMessage[] = [
           ...messages,
           { role: "assistant", content: callRaw },
           {
             role: "user",
-            content:
+            content: annotateUserMessage(
+              lang,
+              sentAt,
               lang === "it"
                 ? `Risultato dello strumento ${call.tool}:\n${toolResult.data ?? "(nessun dato)"}\n\nRispondi alla mia richiesta precedente in italiano, in modo naturale e conciso, usando SOLO questi dati. Non mostrare JSON.`
                 : `Result of tool ${call.tool}:\n${toolResult.data ?? "(no data)"}\n\nAnswer my previous request in English, naturally and concisely, using ONLY this data. Do not show JSON.`,
+            ),
           },
         ];
         const followup = await generate(
@@ -233,11 +252,16 @@ export async function processMessage(
           // the retry context or re-seed the same degenerate pattern.
           { role: "assistant", content: raw.slice(0, 800) },
           {
+            // Annotated: this retry may re-emit date-bearing tool JSON, and
+            // the RULES point at the most recent user message's time context.
             role: "user",
-            content:
+            content: annotateUserMessage(
+              lang,
+              sentAt,
               lang === "it"
                 ? "La tua risposta precedente non era un JSON valido. Rispondi di nuovo con SOLO l'oggetto JSON dello strumento, senza testo, senza spiegazioni e senza blocchi di codice."
                 : "Your previous reply was not valid JSON. Reply again with ONLY the tool JSON object — no prose, no explanation, no code fence.",
+            ),
           },
         ];
         // Silent correction pass (no onToken): don't stream a second raw-JSON

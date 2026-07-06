@@ -246,11 +246,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       updateConversationTitle(conversationId, title).catch(() => {});
     }
 
-    // Read current state (includes userMsg) for orchestrator context
-    const allMessages = get().messages;
+    // History = the conversation BEFORE this turn (currentMsgs was captured
+    // before userMsg was appended). processMessage appends the current text
+    // itself — passing post-append state here sent the user's message to the
+    // model TWICE (once from history, once appended).
     const response: OrchestratorResponse = await processMessage(
       text,
-      allMessages,
+      currentMsgs,
       language,
       (token) => {
         set((s) => ({ streamingText: s.streamingText + token }));
@@ -258,6 +260,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Read tools generate twice; clear the tool-call JSON so only the
       // grounded answer streams.
       () => set({ streamingText: "" }),
+      // The persisted timestamp: history replays of this turn render their
+      // time context from createdAt, so the live turn must render from the
+      // same instant to keep the KV prefix byte-identical.
+      new Date(userMsg.createdAt),
     );
 
     // Create assistant message based on response type

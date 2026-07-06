@@ -4,8 +4,9 @@
 // token prefix, so warm turns are cheap — but the FIRST turn after an app
 // launch prefills the whole stable prefix (~1450 tokens, ~33s measured on a
 // Pixel 10 Pro). This module persists that prefix's KV state to disk and
-// restores it right after model load, so a cold launch pays only the volatile
-// tail + user message.
+// restores it right after model load, so a cold launch pays only the first
+// user message (from the time-derived divergence point inside its
+// [Contesto temporale: ...] line — the V4 system prompt itself is static).
 //
 // Policy (this file) vs mechanics (llm-engine):
 // - The session file is keyed by hash(modelPath + KV cache type + stable
@@ -213,8 +214,8 @@ let persistRunning = false;
  */
 export async function persistPrefixSession(
   stablePrefix: string,
-  probeTailA: string,
-  probeTailB: string,
+  probeUserA: string,
+  probeUserB: string,
 ): Promise<number | null> {
   const modelPath = getModelInfo().path;
   if (!modelPath) return null;
@@ -229,8 +230,8 @@ export async function persistPrefixSession(
     const tokenCount = await snapshotPrefixSession({
       path: SESSION_FILE,
       prefixText: stablePrefix,
-      probeTailA,
-      probeTailB,
+      probeUserA,
+      probeUserB,
     });
 
     const newMeta: SessionMeta = {
