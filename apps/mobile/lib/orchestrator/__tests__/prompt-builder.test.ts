@@ -1,24 +1,23 @@
-// Locks the Fase 4 KV-cache invariant: the system prompt is a STABLE PREFIX
-// (persona + rules + tool schemas + memories/knowledge) followed by a VOLATILE
-// TAIL (date context). llama.rn reuses the KV cache only for the longest
-// common token prefix across completions, so any time-derived content leaking
-// above the tail silently re-pays the full ~17s schema prefill on device.
+// Locks the Fase 4 V4 KV-cache invariant: the system prompt is fully STATIC
+// (persona + rules + tool schemas + memories/knowledge, nothing time-derived)
+// and the date rides in a per-turn [Contesto temporale: ...] line prepended to
+// each user message. llama.rn reuses the KV cache only for the longest common
+// token prefix across completions, so any time-derived content in the system
+// prompt would sit between the cached prefix and the conversation history and
+// silently re-prefill the whole history on every clock tick.
 // tool-registry runs for real, so the schemas the invariant protects are the
 // production ones.
 
 import {
   buildStablePrefix,
-  buildVolatileTail,
-  buildSystemPrompt,
+  buildTurnContext,
+  annotateUserMessage,
+  TIME_CONTEXT_MARKER,
 } from "../prompt-builder";
 import { localDateStr, addDays } from "../date-utils";
 import type { Language } from "../types";
 
 const LANGS: Language[] = ["it", "en"];
-const TAIL_MARKER: Record<Language, string> = {
-  it: "Contesto temporale corrente:",
-  en: "Current date context:",
-};
 const TOOLS_MARKER: Record<Language, string> = {
   it: "Strumenti disponibili:",
   en: "Available tools:",
@@ -28,71 +27,85 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-describe.each(LANGS)("prompt-builder KV-cache invariant (%s)", (lang) => {
-  test("stable prefix is byte-identical across clock changes", () => {
+describe.each(LANGS)("prompt-builder V4 KV-cache invariant (%s)", (lang) => {
+  test("system prompt is byte-identical across clock changes", () => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 6, 1, 22, 41, 37));
-    const stableA = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
-    const promptA = buildSystemPrompt(lang, "- (fact) loves espresso", "notes");
-    const tailA = buildVolatileTail(lang);
-
-    // Full prompt = stable prefix + volatile tail, EXACTLY: nothing may sit
-    // between them or after the tail, or it would re-prefill every turn.
-    expect(promptA).toBe(stableA + tailA);
+    const promptA = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
 
     // Different year, month, day, hour, minute, second — so even year- or
-    // month-derived interpolation into the prefix trips byte-equality.
+    // month-derived interpolation trips byte-equality.
     jest.setSystemTime(new Date(2027, 1, 3, 5, 7, 9));
-    const stableB = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
-    const promptB = buildSystemPrompt(lang, "- (fact) loves espresso", "notes");
+    const promptB = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
 
-    expect(stableB).toBe(stableA);
-    expect(promptB).toBe(stableA + buildVolatileTail(lang));
-    expect(promptA).not.toBe(promptB);
+    expect(promptB).toBe(promptA);
   });
 
-  test("no time-derived content leaks into the stable prefix", () => {
+  test("no time-derived content leaks into the system prompt", () => {
     jest.useFakeTimers().setSystemTime(new Date(2026, 6, 1, 22, 41, 0));
     const now = new Date();
-    const stable = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
-    expect(stable).not.toContain(localDateStr(now)); // today
-    expect(stable).not.toContain(localDateStr(addDays(now, 1))); // tomorrow
-    expect(stable).not.toContain("22:41"); // current time
-    // No concrete calendar date AT ALL in the prefix — neither live (volatile)
-    // nor hardcoded (goes stale, and small models copy prompt examples).
-    expect(stable).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    const prompt = buildStablePrefix(lang, "- (fact) loves espresso", "notes");
+    expect(prompt).not.toContain(localDateStr(now)); // today
+    expect(prompt).not.toContain(localDateStr(addDays(now, 1))); // tomorrow
+    expect(prompt).not.toContain("22:41"); // current time
+    // No concrete calendar date AT ALL — neither live (volatile) nor
+    // hardcoded (goes stale, and small models copy prompt examples).
+    expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
-  test("ordering: tools, then memories/knowledge, then the volatile tail last", () => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 6, 1, 22, 41, 37));
-    const prompt = buildSystemPrompt(lang, "MEMORY_MARKER", "KNOWLEDGE_MARKER");
+  test("ordering: rules reference the time context, then tools, then memories/knowledge", () => {
+    const prompt = buildStablePrefix(lang, "MEMORY_MARKER", "KNOWLEDGE_MARKER");
+    const ruleIdx = prompt.indexOf(TIME_CONTEXT_MARKER[lang]);
     const toolsIdx = prompt.indexOf(TOOLS_MARKER[lang]);
     const memIdx = prompt.indexOf("MEMORY_MARKER");
     const knowIdx = prompt.indexOf("KNOWLEDGE_MARKER");
-    const tailIdx = prompt.indexOf(TAIL_MARKER[lang]);
 
-    expect(toolsIdx).toBeGreaterThan(-1);
+    expect(ruleIdx).toBeGreaterThan(-1); // the rules explain the annotation
+    expect(toolsIdx).toBeGreaterThan(ruleIdx);
     expect(memIdx).toBeGreaterThan(toolsIdx);
     expect(knowIdx).toBeGreaterThan(memIdx);
-    // Memories/knowledge are semi-stable (change rarely) — they extend the
-    // cached prefix, so they must sit BEFORE the every-turn date tail.
-    expect(tailIdx).toBeGreaterThan(knowIdx);
-    expect(prompt.indexOf(TAIL_MARKER[lang], tailIdx + 1)).toBe(-1);
   });
 
-  test("datetime has minute precision (seconds would defeat same-minute reuse)", () => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 6, 1, 22, 41, 37));
-    const tail = buildVolatileTail(lang);
-    expect(tail).toContain("2026-07-01T22:41 (");
-    expect(tail).not.toContain("22:41:37");
+  test("turn context is a pure function of (lang, at) with minute precision", () => {
+    const at = new Date(2026, 6, 1, 22, 41, 37);
+    const ctx = buildTurnContext(lang, at);
+    // Deterministic given the instant — no wall-clock dependency.
+    expect(ctx).toBe(buildTurnContext(lang, at));
+    // Seconds omitted: turns in the same minute render identical bytes.
+    expect(ctx).toContain("2026-07-01T22:41");
+    expect(ctx).not.toContain("22:41:37");
+    expect(ctx).toBe(buildTurnContext(lang, new Date(2026, 6, 1, 22, 41, 59)));
+    // Different instants must produce different contexts (this divergence is
+    // what the session-cache boundary probe relies on).
+    expect(buildTurnContext(lang, new Date(2020, 0, 2, 3, 4))).not.toBe(ctx);
+    // Single line wrapped in the marker brackets.
+    expect(ctx.startsWith(TIME_CONTEXT_MARKER[lang])).toBe(true);
+    expect(ctx.endsWith("]")).toBe(true);
+    expect(ctx).not.toContain("\n");
+  });
+
+  test("annotated user message: context on the first line, text after", () => {
+    const at = new Date(2026, 6, 1, 22, 41, 0);
+    const annotated = annotateUserMessage(lang, at, "svegliami alle 7");
+    expect(annotated).toBe(`${buildTurnContext(lang, at)}\nsvegliami alle 7`);
   });
 });
 
 describe("prompt content guards", () => {
-  test("volatile tail carries the real LOCAL today/tomorrow near midnight", () => {
-    jest.useFakeTimers().setSystemTime(new Date(2026, 6, 1, 23, 59, 0));
-    const tail = buildVolatileTail("it");
-    expect(tail).toContain("Oggi è mercoledì, 2026-07-01");
-    expect(tail).toContain("Domani è 2026-07-02");
+  test("turn context carries LOCAL today/tomorrow/weekday near midnight", () => {
+    const ctx = buildTurnContext("it", new Date(2026, 6, 1, 23, 59, 0));
+    expect(ctx).toContain("mercoledì 2026-07-01T23:59");
+    expect(ctx).toContain("Oggi: 2026-07-01");
+    expect(ctx).toContain("Domani: 2026-07-02");
+    const ctxEn = buildTurnContext("en", new Date(2026, 6, 1, 23, 59, 0));
+    expect(ctxEn).toContain("Wednesday 2026-07-01T23:59");
+    expect(ctxEn).toContain("Tomorrow: 2026-07-02");
+  });
+
+  test("rules explain the annotation and point at the MOST RECENT message", () => {
+    expect(buildStablePrefix("it")).toContain("[Contesto temporale: ...]");
+    expect(buildStablePrefix("it")).toContain("PIÙ RECENTE");
+    expect(buildStablePrefix("en")).toContain("[Time context: ...]");
+    expect(buildStablePrefix("en")).toContain("MOST RECENT");
   });
 
   test("late-night terms are quoted in both languages", () => {
@@ -105,22 +118,5 @@ describe("prompt content guards", () => {
       expect(buildStablePrefix(lang)).not.toContain("2026-05-20");
       expect(buildStablePrefix(lang)).toContain("YYYY-MM-DDTHH:MM:SS");
     }
-  });
-
-  test("volatile tail accepts an injected instant (session-cache probes, dev benchmark)", () => {
-    // Deterministic given the instant — no dependency on the wall clock.
-    const at = new Date(2026, 6, 4, 9, 15, 42);
-    const tail = buildVolatileTail("it", at);
-    expect(tail).toBe(buildVolatileTail("it", at));
-    expect(tail).toContain("2026-07-04T09:15 (");
-    expect(tail).toContain("Domani è 2026-07-05");
-
-    // Two different instants must produce different tails (this divergence is
-    // exactly what snapshotPrefixSession's boundary probe relies on).
-    expect(buildVolatileTail("it", new Date(2020, 0, 2, 3, 4))).not.toBe(tail);
-
-    // Omitting the argument still reads the real clock (production path).
-    jest.useFakeTimers().setSystemTime(at);
-    expect(buildVolatileTail("it")).toBe(tail);
   });
 });

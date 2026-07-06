@@ -1,5 +1,5 @@
-// Builds the system prompt and per-turn time context for the benchmark,
-// localized by language.
+// Builds the system prompt for the benchmark, localized by language.
+// Injects: tool schemas, temporal reasoning rules, current datetime + timezone.
 //
 // SYNC CONTRACT: this file and apps/mobile/lib/orchestrator/prompt-builder.ts
 // must keep the same structure and shared wording — the benchmark validates the
@@ -7,24 +7,20 @@
 // tool-schema.ts) and has no memories/knowledge sections; the mobile copy adds
 // the Fase 2 routing rules. Edit them together.
 //
-// STRUCTURE MATTERS (Fase 4, V4): the system prompt is fully STATIC — no
-// date/time content anywhere in it. The current date rides in a
-// [Contesto temporale: ...] line prepended to each user message
-// (annotateUserMessage). On device, llama.rn reuses the KV cache for the
-// longest common token prefix across completions; a date anywhere in the
-// system prompt would sit between the cached prefix and the conversation
-// history and re-prefill the history on every clock tick. Don't move the
-// date context back into the system prompt.
+// ORDERING MATTERS (Fase 4): STABLE PREFIX (persona + format + rules + tools +
+// fallback) first, VOLATILE TAIL (current date context) last. On device,
+// llama.rn reuses the KV cache for the longest common token prefix across
+// completions, so date/time content above the tool block would re-prefill the
+// whole schema block every clock tick. Don't move the date context back up.
 //
-// Archived baselines: V2 (97.8% easy+medium tool accuracy, Fase 0) at
-// archive/system-prompt-v2-fase0.ts; V3 (stable prefix + volatile date tail,
-// 98.9%/100% on the 2026-07-01 re-run) at archive/system-prompt-v3-fase4.ts.
+// The verbatim V2 prompt that produced the recorded Fase 0 results (97.8%
+// easy+medium tool accuracy) is archived at archive/system-prompt-v2-fase0.ts.
 
 import { formatToolsForPrompt } from "./tool-schema.js";
 
-export interface TurnContextParams {
+export interface SystemPromptParams {
   lang: "it" | "en";
-  datetime: string; // ISO 8601, minute precision, e.g. "2026-03-08T14:30"
+  datetime: string; // ISO 8601, e.g. "2026-03-08T14:30:00"
   timezone: string; // e.g. "Europe/Rome"
 }
 
@@ -63,30 +59,11 @@ function getDayOfWeek(datetime: string, lang: "it" | "en"): string {
   return lang === "it" ? days_it[d.getDay()] : days_en[d.getDay()];
 }
 
-// Mirrors mobile buildTurnContext: one bracketed line carrying datetime,
-// timezone, day of week, today and tomorrow (small models are unreliable at
-// date arithmetic, so tomorrow stays precomputed).
-export function buildTurnContext(params: TurnContextParams): string {
+export function buildSystemPrompt(params: SystemPromptParams): string {
   const { lang, datetime, timezone } = params;
-  const dayOfWeek = getDayOfWeek(datetime, lang);
-  const today = datetime.split("T")[0];
   const tomorrow = getTomorrow(datetime);
-
-  if (lang === "it") {
-    return `[Contesto temporale: ${dayOfWeek} ${datetime} (${timezone}). Oggi: ${today}. Domani: ${tomorrow}]`;
-  }
-  return `[Time context: ${dayOfWeek} ${datetime} (${timezone}). Today: ${today}. Tomorrow: ${tomorrow}]`;
-}
-
-// A user message as the model sees it: time context first line, text after.
-export function annotateUserMessage(
-  params: TurnContextParams,
-  text: string,
-): string {
-  return `${buildTurnContext(params)}\n${text}`;
-}
-
-export function buildSystemPrompt(lang: "it" | "en"): string {
+  const today = datetime.split("T")[0];
+  const dayOfWeek = getDayOfWeek(datetime, lang);
   const toolsBlock = formatToolsForPrompt(lang);
 
   if (lang === "it") {
@@ -103,9 +80,8 @@ Quando l'utente chiede di eseguire un'azione, rispondi ESCLUSIVAMENTE con un JSO
 Quando l'utente fa una domanda generica o vuole conversare, rispondi normalmente in testo libero. NON generare JSON per domande generiche, richieste creative, o conversazioni.
 
 REGOLE:
-- I messaggi dell'utente iniziano con una riga [Contesto temporale: ...] con data, ora e giorno correnti. Non è testo dell'utente: usala per interpretare date e orari, non citarla e non menzionarla nelle risposte
 - Gli orari devono essere in formato HH:MM 24 ore (es. "07:30" per le 7 e mezza, "15:00" per le 3 del pomeriggio)
-- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS"; ricava la data effettiva dal [Contesto temporale: ...] del messaggio PIÙ RECENTE dell'utente
+- Le date devono essere in formato ISO 8601 "YYYY-MM-DDTHH:MM:SS"; ricava la data effettiva dal Contesto temporale corrente in fondo
 - "Stasera" significa oggi; usa le 19:00 come orario predefinito se non specificato. "Stanotte" significa oggi dopo le 23:00 o domani prima delle 06:00
 - "Mattina" senza orario specifico: usa le 09:00. "Pomeriggio" senza orario: usa le 15:00
 - I parametri NON obbligatori possono essere omessi. NON chiedere end time, durata, o altri parametri opzionali
@@ -120,7 +96,10 @@ Strumenti disponibili:
 
 ${toolsBlock}
 
-Se la richiesta non corrisponde a nessuno strumento d'azione, rispondi in testo libero come conversazione generale.`;
+Se la richiesta non corrisponde a nessuno strumento d'azione, rispondi in testo libero come conversazione generale.
+
+Contesto temporale corrente:
+Data e ora: ${datetime} (${timezone}). Oggi è ${dayOfWeek}, ${today}. Domani è ${tomorrow}.`;
   }
 
   return `You are Vesta, a personal assistant running locally on the user's device.
@@ -136,9 +115,8 @@ When the user asks you to perform an action, respond EXCLUSIVELY with valid JSON
 When the user asks a general question or wants to chat, respond normally in plain text. Do NOT generate JSON for general questions, creative requests, or conversations.
 
 RULES:
-- User messages start with a [Time context: ...] line carrying the current date, time and weekday. It is not the user's text: use it to interpret dates and times, do not quote it and do not mention it in replies
 - Times must be in HH:MM 24-hour format (e.g., "07:30" for 7:30 AM, "15:00" for 3 PM)
-- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS"; take the actual date from the [Time context: ...] of the user's MOST RECENT message
+- Dates must be in ISO 8601 format "YYYY-MM-DDTHH:MM:SS"; take the actual date from the Current date context at the end
 - "Tonight" means today; default to 19:00 if no specific time given. "Late tonight" means today after 23:00 or tomorrow before 06:00
 - "Morning" without specific time: default to 09:00. "Afternoon" without time: default to 15:00
 - Non-required parameters CAN be omitted. Do NOT ask for end time, duration, or other optional parameters
@@ -153,5 +131,8 @@ Available tools:
 
 ${toolsBlock}
 
-If the request doesn't match any action tool, respond in plain text as general conversation.`;
+If the request doesn't match any action tool, respond in plain text as general conversation.
+
+Current date context:
+Date and time: ${datetime} (${timezone}). Today is ${dayOfWeek}, ${today}. Tomorrow is ${tomorrow}.`;
 }

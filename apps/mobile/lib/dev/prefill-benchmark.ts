@@ -1,18 +1,26 @@
 // Formal before/after prefill benchmark (Fase 4), dev-only.
 //
 // Measures llama.rn `timings.promptMs` across a scripted multi-turn
-// conversation under the two prompt layouts:
+// conversation under the three prompt layouts:
 //   V2 "date-first"     — frozen pre-PR-#18 builder (lib/dev/prompt-v2.ts):
 //                         volatile datetime above the tool schemas.
-//   V3 "stable-prefix"  — current builder: datetime-only tail at the end.
+//   V3 "stable-prefix"  — frozen PR-#18..#20 builder (lib/dev/prompt-v3.ts):
+//                         volatile date tail at the end of the system prompt,
+//                         BETWEEN the cached prefix and the history.
+//   V4 "per-turn date"  — current builder: fully static system prompt, the
+//                         date rides in each user message and history replays
+//                         byte-identically.
 //
-// Both arms see byte-identical user messages and (canned) assistant history;
-// the injected clock advances 70s per turn so EVERY turn crosses a minute
+// All arms see the same user texts and (canned) assistant history; the
+// injected clock advances 70s per turn so EVERY turn crosses a minute
 // boundary — the worst case for KV-cache reuse and the normal case in real
 // usage. The KV cache is cleared before each arm, so turn 1 is a cold prefill
-// in both (a built-in sanity check: the two colds should be roughly equal).
-// V2 runs first: if the device thermally throttles over the run, the penalty
-// lands on V3, which biases the result AGAINST the restructure.
+// in all three. Arms run oldest-first: if the device thermally throttles over
+// the run, the penalty lands on the newest layout, biasing AGAINST the claim.
+//
+// Expected shape: V2 re-prefills everything every turn; V3 re-prefills the
+// history below the date tail (cost grows with history); V4 prefills only the
+// new user message (flat, small).
 //
 // Run from the chat input in a dev build: /benchmark-prefill
 
@@ -21,9 +29,10 @@ import type { CompletionMessage } from "../llm/llm-engine";
 import { cancelExtraction } from "../orchestrator/memory-manager";
 import {
   buildStablePrefix,
-  buildVolatileTail,
+  annotateUserMessage,
 } from "../orchestrator/prompt-builder";
 import { buildSystemPromptV2 } from "./prompt-v2";
+import { buildStablePrefixV3, buildVolatileTailV3 } from "./prompt-v3";
 import type { Language } from "../orchestrator/types";
 
 const LANG: Language = "it";
@@ -48,6 +57,35 @@ const TURNS: Array<{ user: string; canned: string }> = [
   { user: "grazie mille", canned: "Prego! A disposizione." },
 ];
 
+function turnDate(i: number): Date {
+  return new Date(START.getTime() + i * STEP_MS);
+}
+
+// Full message list for turn `turnIdx` of an arm. `system` renders from the
+// CURRENT turn's clock (V2/V3 interpolate it; V4 ignores it), `user` renders
+// each user message from ITS OWN turn's clock — V4's byte-stable replay is
+// exactly this property.
+function messagesFor(
+  system: (now: Date) => string,
+  user: (text: string, at: Date) => string,
+  turnIdx: number,
+): CompletionMessage[] {
+  const messages: CompletionMessage[] = [
+    { role: "system", content: system(turnDate(turnIdx)) },
+  ];
+  for (let j = 0; j < turnIdx; j++) {
+    messages.push(
+      { role: "user", content: user(TURNS[j].user, turnDate(j)) },
+      { role: "assistant", content: TURNS[j].canned },
+    );
+  }
+  messages.push({
+    role: "user",
+    content: user(TURNS[turnIdx].user, turnDate(turnIdx)),
+  });
+  return messages;
+}
+
 interface TurnResult {
   promptMs: number;
   tokensEvaluated: number;
@@ -60,22 +98,19 @@ interface ArmResult {
 
 async function runArm(
   name: string,
-  buildPrompt: (now: Date) => string,
+  system: (now: Date) => string,
+  user: (text: string, at: Date) => string,
   onProgress: (line: string) => void,
 ): Promise<ArmResult> {
   await clearKvCache();
-  const history: CompletionMessage[] = [];
   const turns: TurnResult[] = [];
 
   for (let i = 0; i < TURNS.length; i++) {
-    const now = new Date(START.getTime() + i * STEP_MS);
-    const messages: CompletionMessage[] = [
-      { role: "system", content: buildPrompt(now) },
-      ...history,
-      { role: "user", content: TURNS[i].user },
-    ];
     // Tiny n_predict: decode time is irrelevant here, prefill is the metric.
-    const result = await generate(messages, { maxTokens: 8, temperature: 0 });
+    const result = await generate(messagesFor(system, user, i), {
+      maxTokens: 8,
+      temperature: 0,
+    });
     // The Stop button is live during the run (isGenerating is set). A stop
     // mid-prefill leaves this turn partially measured and would silently
     // inflate the next one — abort the whole run instead of reporting junk.
@@ -88,10 +123,6 @@ async function runArm(
     });
     onProgress(
       `${name} turno ${i + 1}/${TURNS.length}: ${Math.round(result.timings.promptMs)} ms (${result.tokensEvaluated} tok prefilled)`,
-    );
-    history.push(
-      { role: "user", content: TURNS[i].user },
-      { role: "assistant", content: TURNS[i].canned },
     );
   }
   return { name, turns };
@@ -111,8 +142,8 @@ function formatArm(arm: ArmResult): string {
 }
 
 /**
- * Run both arms and return a markdown report. Progress lines stream through
- * `onProgress` (the chat store shows them as streaming text).
+ * Run all three arms and return a markdown report. Progress lines stream
+ * through `onProgress` (the chat store shows them as streaming text).
  */
 export async function runPrefillBenchmark(
   onProgress: (line: string) => void,
@@ -123,22 +154,39 @@ export async function runPrefillBenchmark(
   cancelExtraction();
   const modelName = getModelInfo().path?.split("/").pop() ?? "?";
 
-  onProgress("Braccio 1/2: V2 (data in testa)...");
-  const v2 = await runArm("V2", (now) => buildSystemPromptV2(LANG, now), onProgress);
+  const plainUser = (text: string) => text;
 
-  onProgress("Braccio 2/2: V3 (prefisso stabile)...");
-  const stablePrefix = buildStablePrefix(LANG);
-  const v3 = await runArm(
-    "V3",
-    (now) => stablePrefix + buildVolatileTail(LANG, now),
+  onProgress("Braccio 1/3: V2 (data in testa)...");
+  const v2 = await runArm(
+    "V2",
+    (now) => buildSystemPromptV2(LANG, now),
+    plainUser,
     onProgress,
   );
 
-  // Turn 1 is the cold prefill in both arms; the caching claim is about the
-  // warm turns (2+), where V2 keeps re-prefilling everything below the date.
-  const warmV2 = mean(v2.turns.slice(1).map((t) => t.promptMs));
-  const warmV3 = mean(v3.turns.slice(1).map((t) => t.promptMs));
-  const speedup = warmV3 > 0 ? warmV2 / warmV3 : NaN;
+  onProgress("Braccio 2/3: V3 (prefisso stabile + coda data)...");
+  const stablePrefixV3 = buildStablePrefixV3(LANG);
+  const v3 = await runArm(
+    "V3",
+    (now) => stablePrefixV3 + buildVolatileTailV3(LANG, now),
+    plainUser,
+    onProgress,
+  );
+
+  onProgress("Braccio 3/3: V4 (data per turno)...");
+  const staticSystem = buildStablePrefix(LANG);
+  const v4 = await runArm(
+    "V4",
+    () => staticSystem,
+    (text, at) => annotateUserMessage(LANG, at, text),
+    onProgress,
+  );
+
+  // Turn 1 is the cold prefill in every arm; the caching claims are about the
+  // warm turns (2+): V2 re-prefills everything, V3 re-prefills the history
+  // below the date tail, V4 appends.
+  const warm = (a: ArmResult) => mean(a.turns.slice(1).map((t) => t.promptMs));
+  const [warmV2, warmV3, warmV4] = [warm(v2), warm(v3), warm(v4)];
 
   return [
     "Benchmark prefill (timings.promptMs)",
@@ -148,10 +196,14 @@ export async function runPrefillBenchmark(
     "V2 — data in testa (pre PR #18):",
     formatArm(v2),
     "",
-    "V3 — prefisso stabile (attuale):",
+    "V3 — prefisso stabile + coda data (PR #18..#20):",
     formatArm(v3),
     "",
-    `Turno 1 (cold, sanity check): V2 ${Math.round(v2.turns[0].promptMs)} ms vs V3 ${Math.round(v3.turns[0].promptMs)} ms`,
-    `Media turni 2-${TURNS.length} (warm): V2 ${Math.round(warmV2)} ms vs V3 ${Math.round(warmV3)} ms → ${speedup.toFixed(1)}x`,
+    "V4 — data per turno (attuale):",
+    formatArm(v4),
+    "",
+    `Turno 1 (cold): V2 ${Math.round(v2.turns[0].promptMs)} ms, V3 ${Math.round(v3.turns[0].promptMs)} ms, V4 ${Math.round(v4.turns[0].promptMs)} ms`,
+    `Media turni 2-${TURNS.length} (warm): V2 ${Math.round(warmV2)} ms, V3 ${Math.round(warmV3)} ms, V4 ${Math.round(warmV4)} ms`,
+    `V4 vs V3 (warm): ${(warmV3 / warmV4).toFixed(1)}x — V4 ultimo turno ${Math.round(v4.turns[TURNS.length - 1].promptMs)} ms vs V3 ${Math.round(v3.turns[TURNS.length - 1].promptMs)} ms`,
   ].join("\n");
 }

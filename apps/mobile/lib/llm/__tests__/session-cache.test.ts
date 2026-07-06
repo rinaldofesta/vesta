@@ -105,13 +105,13 @@ describe("fnv1aHex", () => {
 
 describe("persist → restore round trip", () => {
   test("persists once, then restores on the next launch", async () => {
-    const saved = await persistPrefixSession(PREFIX, "\n\nTAIL A", "\n\nTAIL B");
+    const saved = await persistPrefixSession(PREFIX, "[CTX A]\n.", "[CTX B]\n.");
     expect(saved).toBe(1456);
     expect(mockSnapshot).toHaveBeenCalledWith({
       path: SESSION_FILE,
       prefixText: PREFIX,
-      probeTailA: "\n\nTAIL A",
-      probeTailB: "\n\nTAIL B",
+      probeUserA: "[CTX A]\n.",
+      probeUserB: "[CTX B]\n.",
     });
     expect(fs.__files.has(META_FILE)).toBe(true);
 

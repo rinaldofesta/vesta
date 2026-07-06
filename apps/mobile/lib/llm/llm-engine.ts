@@ -304,11 +304,13 @@ export function commonPrefixLength(a: number[], b: number[]): number {
 /**
  * Persist the stable-prefix region of the current KV state to disk.
  *
- * The TOKEN LIST to save is bounded by rendering the system message with two
- * probe tails whose datetimes diverge, tokenizing both, and taking the longest
- * common token prefix — everything before the first time-derived token. A
- * future launch's prompt matches those tokens exactly, so llama.rn resumes
- * KV reuse from the boundary.
+ * The TOKEN LIST to save is bounded by rendering the static system message
+ * followed by two probe FIRST USER MESSAGES whose time contexts diverge,
+ * tokenizing both, and taking the longest common token prefix — everything
+ * before the first time-derived token (the system prompt itself is static in
+ * the V4 layout; the first divergence is inside the opening user message's
+ * [Contesto temporale: ...] line). A future launch's prompt matches those
+ * tokens exactly, so llama.rn resumes KV reuse from the boundary.
  *
  * COST CAVEAT: llama.cpp's llama_state_save_file serializes the token list
  * truncated at tokenSize but the FULL KV tensor state of every occupied cell
@@ -329,8 +331,8 @@ export function commonPrefixLength(a: number[], b: number[]): number {
 export function snapshotPrefixSession(opts: {
   path: string;
   prefixText: string;
-  probeTailA: string;
-  probeTailB: string;
+  probeUserA: string;
+  probeUserB: string;
 }): Promise<number> {
   return withLock(async () => {
     if (!context) throw new Error("No model loaded");
@@ -338,19 +340,17 @@ export function snapshotPrefixSession(opts: {
 
     // Sequential on purpose: two concurrent JSI calls on one context are not
     // guaranteed safe, and this whole op already holds the engine lock.
-    // The fixed user message keeps templates that dislike system-only chats
-    // happy; being identical in both probes, it cannot move the boundary.
     // Each probe also gets a DIFFERENT template `now`: a chat template that
     // itself injects the current date (some imported GGUFs do) then diverges
     // at that date, the boundary lands before it, and the <64 guard below
     // correctly refuses to persist a prefix that goes stale at midnight.
     const PROBE_NOW = [946684800, 4102444800]; // epoch 2000-01-01 / 2100-01-01
     const probes: number[][] = [];
-    for (const [i, tail] of [opts.probeTailA, opts.probeTailB].entries()) {
+    for (const [i, probeUser] of [opts.probeUserA, opts.probeUserB].entries()) {
       const formatted = await context.getFormattedChat(
         [
-          { role: "system", content: opts.prefixText + tail },
-          { role: "user", content: "." },
+          { role: "system", content: opts.prefixText },
+          { role: "user", content: probeUser },
         ],
         undefined,
         { now: PROBE_NOW[i] },

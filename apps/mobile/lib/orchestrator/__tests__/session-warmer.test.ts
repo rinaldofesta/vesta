@@ -49,16 +49,17 @@ describe("schedulePrefixPersist", () => {
     { role: "user" as const, content: "ciao" },
   ];
 
-  test("persists with two DIVERGING probe tails in production format", () => {
+  test("persists with two DIVERGING probe user messages in production format", () => {
     schedulePrefixPersist("STABLE PREFIX", "it", SMALL_TURN, 50);
 
     expect(mockPersist).toHaveBeenCalledTimes(1);
-    const [prefix, tailA, tailB] = mockPersist.mock.calls[0];
+    const [prefix, probeA, probeB] = mockPersist.mock.calls[0];
     expect(prefix).toBe("STABLE PREFIX");
-    expect(tailA).toContain("Contesto temporale corrente:");
-    expect(tailB).toContain("Contesto temporale corrente:");
-    // The boundary search needs the tails to differ.
-    expect(tailA).not.toBe(tailB);
+    // V4: probes are annotated first-user-messages, not system tails.
+    expect(probeA).toMatch(/^\[Contesto temporale: /);
+    expect(probeB).toMatch(/^\[Contesto temporale: /);
+    // The boundary search needs the probes to differ.
+    expect(probeA).not.toBe(probeB);
   });
 
   test("skips when the turn may have ctx_shifted the prefix out", () => {

@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { buildSystemPrompt } from "./system-prompt.js";
+import { buildSystemPrompt, annotateUserMessage } from "./system-prompt.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,10 +49,11 @@ const PROMPTS_FILE = join(__dirname, "prompts.jsonl");
 const RESULTS_DIR = join(__dirname, "results");
 const OLLAMA_URL = "http://localhost:11434";
 
-// Current datetime for system prompt (simulating "now" for benchmark).
-// Minute precision, mirroring the production volatile tail: the mobile
-// formatDatetime deliberately omits seconds (KV-cache reuse), so the benchmark
-// must exercise the same prompt shape the device ships.
+// Current datetime for the per-turn time context (simulating "now").
+// Minute precision, mirroring production: the mobile formatDatetime
+// deliberately omits seconds (KV-cache reuse), so the benchmark must exercise
+// the same prompt shape the device ships — a static system prompt plus a
+// [Contesto temporale: ...] line prepended to the user message.
 const CURRENT_DATETIME = "2026-03-08T14:30";
 const TIMEZONE = "Europe/Rome";
 
@@ -434,16 +435,8 @@ async function main() {
 
   // Build system prompts (one per language)
   const systemPrompts: Record<string, string> = {
-    it: buildSystemPrompt({
-      lang: "it",
-      datetime: CURRENT_DATETIME,
-      timezone: TIMEZONE,
-    }),
-    en: buildSystemPrompt({
-      lang: "en",
-      datetime: CURRENT_DATETIME,
-      timezone: TIMEZONE,
-    }),
+    it: buildSystemPrompt("it"),
+    en: buildSystemPrompt("en"),
   };
 
   // Check Ollama is running (unless mock)
@@ -480,7 +473,14 @@ async function main() {
       const systemPrompt = systemPrompts[prompt.lang];
       const { response, latencyMs } = useMock
         ? mockResponse(prompt)
-        : await queryOllama(model, systemPrompt, prompt.input);
+        : await queryOllama(
+            model,
+            systemPrompt,
+            annotateUserMessage(
+              { lang: prompt.lang, datetime: CURRENT_DATETIME, timezone: TIMEZONE },
+              prompt.input,
+            ),
+          );
 
       const evaluation = evaluateResponse(prompt, response);
 

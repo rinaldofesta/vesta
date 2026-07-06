@@ -1,4 +1,4 @@
-// Tests the prefill A/B benchmark harness LOGIC (arm order, prompt layouts,
+// Tests the prefill A/B/C benchmark harness LOGIC (arm order, prompt layouts,
 // determinism, stop handling, report math). Actual timings come from the
 // device run — generate() is mocked here.
 
@@ -15,6 +15,7 @@ jest.mock("../../orchestrator/memory-manager", () => ({
 import { runPrefillBenchmark } from "../prefill-benchmark";
 import { clearKvCache, generate } from "../../llm/llm-engine";
 import { cancelExtraction } from "../../orchestrator/memory-manager";
+import type { CompletionMessage } from "../../llm/llm-engine";
 
 const mockGenerate = generate as jest.MockedFunction<typeof generate>;
 const mockClear = clearKvCache as jest.MockedFunction<typeof clearKvCache>;
@@ -31,56 +32,88 @@ function result(promptMs: number, opts: { stoppedByUser?: boolean } = {}) {
   };
 }
 
+// The message lists of one arm: calls 6*armIdx .. 6*armIdx+5.
+function armCalls(armIdx: number): CompletionMessage[][] {
+  return mockGenerate.mock.calls
+    .slice(armIdx * 6, armIdx * 6 + 6)
+    .map((c) => c[0]);
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockGenerate.mockResolvedValue(result(1000));
 });
 
 describe("runPrefillBenchmark", () => {
-  test("runs V2 first then V3, 6 turns each, clearing the KV cache per arm", async () => {
+  test("runs V2, V3, V4 in order, 6 turns each, clearing the KV cache per arm", async () => {
     const report = await runPrefillBenchmark(() => {});
 
     expect(cancelExtraction).toHaveBeenCalledTimes(1);
-    expect(mockClear).toHaveBeenCalledTimes(2);
-    expect(mockGenerate).toHaveBeenCalledTimes(12);
+    expect(mockClear).toHaveBeenCalledTimes(3);
+    expect(mockGenerate).toHaveBeenCalledTimes(18);
 
-    // Arm order: the first 6 system prompts are the frozen V2 layout (date
-    // context ABOVE the rules/tools), the last 6 the V3 stable-prefix layout
-    // (date-only tail at the very end).
-    const systems = mockGenerate.mock.calls.map((c) => c[0][0].content);
-    for (const s of systems.slice(0, 6)) {
+    // V2: date context ABOVE the rules/tools in the system prompt.
+    for (const msgs of armCalls(0)) {
+      const s = msgs[0].content;
       expect(s).toContain("Data e ora corrente:");
       expect(s.indexOf("Data e ora corrente:")).toBeLessThan(s.indexOf("REGOLE:"));
     }
-    for (const s of systems.slice(6)) {
+    // V3: date tail at the very END of the system prompt.
+    for (const msgs of armCalls(1)) {
+      const s = msgs[0].content;
       expect(s).toContain("Contesto temporale corrente:");
       expect(s.indexOf("REGOLE:")).toBeLessThan(
         s.indexOf("Contesto temporale corrente:"),
       );
     }
+    // V4: STATIC system prompt (no date at all); date rides in user messages.
+    for (const msgs of armCalls(2)) {
+      expect(msgs[0].content).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+      const users = msgs.filter((m) => m.role === "user");
+      for (const u of users) {
+        expect(u.content).toMatch(/^\[Contesto temporale: /);
+      }
+    }
 
     expect(report).toContain("V2 — data in testa");
     expect(report).toContain("V3 — prefisso stabile");
-    expect(report).toContain("Media turni 2-6");
+    expect(report).toContain("V4 — data per turno");
+    expect(report).toContain("V4 vs V3 (warm):");
   });
 
-  test("the injected clock changes the prompt every turn, identically across arms", async () => {
+  test("V2/V3 system prompts change every turn; V4's is byte-identical", async () => {
     await runPrefillBenchmark(() => {});
-    const systems = mockGenerate.mock.calls.map((c) => c[0][0].content);
-    const v2 = systems.slice(0, 6);
-    const v3 = systems.slice(6);
+    const systems = (i: number) => armCalls(i).map((m) => m[0].content);
 
-    // +70s per turn crosses a minute boundary every turn in both layouts.
-    expect(new Set(v2).size).toBe(6);
-    expect(new Set(v3).size).toBe(6);
+    // +70s per turn crosses a minute boundary every turn.
+    expect(new Set(systems(0)).size).toBe(6);
+    expect(new Set(systems(1)).size).toBe(6);
+    expect(new Set(systems(2)).size).toBe(1);
+  });
 
-    // Byte-identical history/user content across arms: only the system prompt
-    // differs between paired turns.
-    for (let i = 0; i < 6; i++) {
-      const restV2 = JSON.stringify(mockGenerate.mock.calls[i][0].slice(1));
-      const restV3 = JSON.stringify(mockGenerate.mock.calls[6 + i][0].slice(1));
-      expect(restV2).toBe(restV3);
+  test("V4 history replays byte-identically: each turn extends the previous", async () => {
+    await runPrefillBenchmark(() => {});
+    const v4 = armCalls(2);
+    for (let i = 1; i < 6; i++) {
+      const prev = v4[i - 1];
+      const curr = v4[i];
+      // prev = [system, ...pairs, user_i-1]; curr replays prev entirely
+      // (user_i-1 now followed by its canned reply) then adds user_i.
+      expect(JSON.stringify(curr.slice(0, prev.length))).toBe(
+        JSON.stringify(prev),
+      );
+      expect(curr.length).toBe(prev.length + 2);
     }
+  });
+
+  test("user texts are identical across arms (annotation aside)", async () => {
+    await runPrefillBenchmark(() => {});
+    const lastTurnUsers = (i: number) =>
+      armCalls(i)[5]
+        .filter((m) => m.role === "user")
+        .map((m) => m.content.replace(/^\[[^\]]*\]\n/, ""));
+    expect(lastTurnUsers(2)).toEqual(lastTurnUsers(0));
+    expect(lastTurnUsers(2)).toEqual(lastTurnUsers(1));
   });
 
   test("deterministic sampling: temperature 0, tiny n_predict", async () => {
