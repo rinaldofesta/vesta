@@ -56,7 +56,8 @@ let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 // existing installs). Any change to an EXISTING table (e.g. ADD COLUMN) must go
 // through a numbered migration here so upgraded installs converge deterministically
 // instead of silently missing columns. Bump SCHEMA_VERSION and append to MIGRATIONS.
-const MIGRATIONS: { version: number; sql: string }[] = [
+// Exported for the migration-chain regression test (migrations.test.ts).
+export const MIGRATIONS: { version: number; sql: string }[] = [
   {
     version: 1,
     sql: `
@@ -112,7 +113,9 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   },
 ];
 
-async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
+// Exported for testing. Applies every migration whose version exceeds the DB's
+// current user_version, in ascending order, each in its own transaction.
+export async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   const row = await database.getFirstAsync<{ user_version: number }>(
     "PRAGMA user_version",
   );
