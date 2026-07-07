@@ -348,13 +348,29 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* Diagnostics section */}
+      <Text style={styles.sectionTitle}>Diagnostics</Text>
+      <View style={styles.card}>
+        <Text style={styles.knowledgeDesc}>
+          On-device status: model, last-turn prefill, database and prefix-cache
+          size. Everything stays local.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPrimary, styles.knowledgeAddBtn]}
+          onPress={() => router.push("/diagnostics")}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.btnPrimaryText}>Open Diagnostics</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* About section */}
       <Text style={styles.sectionTitle}>About</Text>
       <View style={styles.card}>
         <Text style={styles.aboutText}>
           Vesta is an offline-first AI assistant that runs entirely on your device. No cloud, no data leaves your phone.
         </Text>
-        <Text style={styles.versionText}>v0.1.0 — Fase 2 (Core Polish)</Text>
+        <Text style={styles.versionText}>v0.1.0 — Fase 5 (Reliability &amp; Release)</Text>
       </View>
     </ScrollView>
   );

@@ -93,6 +93,10 @@ export default function RootLayout() {
           name="documents"
           options={{ title: "Documents" }}
         />
+        <Stack.Screen
+          name="diagnostics"
+          options={{ title: "Diagnostics" }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

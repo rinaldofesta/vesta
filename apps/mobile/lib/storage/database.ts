@@ -2,6 +2,7 @@
 // Manages messages, conversations, memories, and config for Vesta.
 
 import * as SQLite from "expo-sqlite";
+import * as FileSystem from "expo-file-system/legacy";
 import type { Message } from "../orchestrator/types";
 
 export interface Conversation {
@@ -206,6 +207,14 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   });
 
   return dbPromise;
+}
+
+// On-disk byte size of the database file, for the diagnostics screen.
+// expo-sqlite stores databases under documentDirectory/SQLite/.
+export async function getDatabaseSizeBytes(): Promise<number> {
+  const path = `${FileSystem.documentDirectory}SQLite/vesta.db`;
+  const info = await FileSystem.getInfoAsync(path);
+  return info.exists ? info.size ?? 0 : 0;
 }
 
 // --- Messages ---

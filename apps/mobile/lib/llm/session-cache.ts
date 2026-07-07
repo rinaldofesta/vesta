@@ -123,6 +123,42 @@ export async function clearPrefixSessionCache(): Promise<void> {
   lastPersistAt = 0;
 }
 
+export interface SessionCacheInfo {
+  exists: boolean;
+  sizeBytes: number;
+  tokenCount: number | null;
+  savedAt: number | null;
+  // The in-memory disk hash is a valid string — a restore validated the cache
+  // this session, so the next clean turn's persist will skip (already cached).
+  primed: boolean;
+}
+
+/** Read-only snapshot of the on-disk prefix cache, for the diagnostics screen. */
+export async function getSessionCacheInfo(): Promise<SessionCacheInfo> {
+  const binInfo = await FileSystem.getInfoAsync(SESSION_FILE);
+  let tokenCount: number | null = null;
+  let savedAt: number | null = null;
+  try {
+    const metaInfo = await FileSystem.getInfoAsync(META_FILE);
+    if (metaInfo.exists) {
+      const meta = JSON.parse(
+        await FileSystem.readAsStringAsync(META_FILE),
+      ) as Partial<SessionMeta>;
+      tokenCount = meta.tokenCount ?? null;
+      savedAt = meta.savedAt ?? null;
+    }
+  } catch {
+    /* best-effort — unreadable meta is just "unknown" */
+  }
+  return {
+    exists: binInfo.exists,
+    sizeBytes: binInfo.exists ? binInfo.size ?? 0 : 0,
+    tokenCount,
+    savedAt,
+    primed: typeof knownDiskHash === "string",
+  };
+}
+
 /**
  * Restore the persisted prefix KV state for the loaded model, if the cached
  * file matches the current stable prefix. Call once per model load, BEFORE

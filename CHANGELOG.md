@@ -25,6 +25,12 @@ reply that didn't reach SQLite vanished on the next restart with no signal.
 
 ### Added — Fase 5
 
+- **On-device diagnostics screen** — a new Settings → Diagnostics page showing
+  the active model (name, file, context size, KV-cache type), the last turn's
+  prefill time and prompt-token count (the local proxy for KV-cache reuse — a
+  warm append evaluates few tokens, a cold turn many), and the on-disk footprint
+  (database and prefix session cache). All read locally; nothing is sent
+  anywhere. The offline-first substitute for telemetry.
 - **Long conversations stay fast (anchored history window)** — the history
   window used to re-slice to the last 20 messages every turn, so a conversation
   past 20 messages re-prefilled the whole window each turn. The window start is
