@@ -311,7 +311,7 @@ Due invarianti, bloccate dai test (`prompt-builder.test.ts`, `history-stability.
 1. mai interpolare data/ora (o qualsiasi valore per-turno) nel system prompt;
 2. la history deve essere una funzione pura dei messaggi salvati — replay byte-identico per sempre.
 
-Limitazioni note accettate (dettagli in GAMEPLAN.md): slide della finestra a 20 messaggi, cambio timezone, aggiornamento del suffisso [Tool:] alla risoluzione del confirm gate — ognuna causa un singolo re-prefill bounded.
+Limitazioni note (triage Fase 5, dettagli in GAMEPLAN.md): la slide della finestra history è RISOLTA — `historyWindowStart` ancora l'inizio della finestra a uno stride di 8 messaggi, così una conversazione lunga resta un puro append tra un salto e l'altro (prima `slice(-20)` re-sliceva ogni turno). Restano accettate, perché rare e bounded: il cambio di timezone (un cold start al lancio successivo) e l'aggiornamento del suffisso `[Tool:]` alla risoluzione del confirm gate (un re-prefill una tantum).
 
 ---
 

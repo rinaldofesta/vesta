@@ -26,6 +26,23 @@ import { getConfig } from "../storage/database";
 import { toolRequiresConfirmation, toolReturnsData } from "../tools/tool-registry";
 
 const MAX_HISTORY_MESSAGES = 20;
+// Once the conversation exceeds the window, `slice(-MAX)` would re-slice to a
+// different set every turn — the replayed history's head would shift by one
+// each turn and re-prefill the whole window (the V4 append win evaporates on
+// long chats). Instead we pin the window START to a multiple of this stride, so
+// it only advances in jumps: between jumps the head is byte-identical and the
+// turn stays a pure KV append; only a boundary crossing pays one re-prefill
+// (~once per stride messages instead of every turn). Cost: the window can hold
+// up to MAX + STRIDE - 1 messages — still far under the context size.
+const HISTORY_SLIDE_STRIDE = 8;
+
+// The index of the first history message to include. Rounds the "last MAX"
+// start DOWN to a stride boundary so it advances every STRIDE messages, not
+// every turn. Exported for the byte-stability tests. Pure function of length.
+export function historyWindowStart(total: number): number {
+  const minStart = Math.max(0, total - MAX_HISTORY_MESSAGES);
+  return Math.floor(minStart / HISTORY_SLIDE_STRIDE) * HISTORY_SLIDE_STRIDE;
+}
 
 // Runs a confirmed tool call. Called by the store after the user approves a
 // pending (destructive) action; routing already validated the tool name.
@@ -86,8 +103,8 @@ export async function processMessage(
     { role: "system", content: stablePrefix },
   ];
 
-  // Add recent history (trimmed to avoid blowing context)
-  const recent = history.slice(-MAX_HISTORY_MESSAGES);
+  // Add recent history (anchored sliding window — see historyWindowStart).
+  const recent = history.slice(historyWindowStart(history.length));
   for (const msg of recent) {
     if (msg.role === "user") {
       messages.push({

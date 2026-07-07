@@ -25,6 +25,12 @@ reply that didn't reach SQLite vanished on the next restart with no signal.
 
 ### Added — Fase 5
 
+- **Long conversations stay fast (anchored history window)** — the history
+  window used to re-slice to the last 20 messages every turn, so a conversation
+  past 20 messages re-prefilled the whole window each turn. The window start is
+  now anchored to an 8-message stride, so it only jumps occasionally; between
+  jumps a long chat stays a pure KV-cache append (the same win short chats
+  already had), cutting re-prefills on long conversations by roughly 4x.
 - **Regression tests for the last uncovered on-device bug classes** — the schema
   migration runner (fresh DB reaches the latest version, migrations applied in
   order, each atomic, idempotent on re-run) and the resumable downloader
