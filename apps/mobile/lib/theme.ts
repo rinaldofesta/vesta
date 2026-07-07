@@ -31,6 +31,8 @@ export const colors = {
   successBg:       "rgba(141,174,146,0.12)",
   error:           "#C9736A",   // Soft coral           (Pantone 16-1526 Terra Cotta Rose)
   errorBg:         "rgba(201,115,106,0.10)",
+  warning:         "#C79A54",   // Warm amber           (Pantone 15-0948 Spicy Mustard)
+  warningBg:       "rgba(199,154,84,0.12)",
   info:            "#8BA7BE",   // Steel blue pastel   (Pantone 15-4312 Dusty Blue)
 
   // ── Text ────────────────────────────────────────

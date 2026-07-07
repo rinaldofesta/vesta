@@ -33,6 +33,7 @@ import { getPerfSettings, perfToLlmOptions } from "../llm/perf-config";
 import { runMemoryDecay } from "../orchestrator/memory-manager";
 import { warmSessionCache } from "../orchestrator/session-warmer";
 import { clearPrefixSessionCache } from "../llm/session-cache";
+import { persistFailureNotice, modelLoadFailureNotice } from "./notices";
 import { startVestaService } from "../native/vesta-service";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -40,6 +41,7 @@ import {
   getActiveModel,
   setModelState,
 } from "../models/model-registry";
+import type { InstalledModel } from "../models/types";
 
 // A destructive tool call parsed but not yet executed — awaiting the user's
 // explicit confirmation. Held in memory only: a restart never auto-executes it.
@@ -59,6 +61,10 @@ interface ChatState {
   modelLoaded: boolean;
   modelPath: string | null;
   error: string | null;
+  // Non-fatal warning (a save failed, a model didn't load). The turn succeeded
+  // but something degraded — shown in a dismissible amber banner, not the red
+  // `error` one. See ./notices and NoticeBanner.
+  notice: string | null;
   pendingConfirmation: PendingConfirmation | null;
 
   // Actions
@@ -71,9 +77,19 @@ interface ChatState {
   deleteAndSwitch: (id: string) => Promise<void>;
   setLanguage: (lang: Language) => Promise<void>;
   updateModelStatus: () => void;
+  dismissNotice: () => void;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = create<ChatState>((set, get) => {
+  // A persistence write failed. Log it (for `adb logcat`) AND surface it, so a
+  // save failure is never silent — the in-memory turn is fine, but the SQLite
+  // copy isn't, and the user deserves to know it may not survive a restart.
+  const notePersistFailure = (scope: string, err: unknown) => {
+    console.error(`Failed to persist ${scope}:`, err);
+    set({ notice: persistFailureNotice(get().language) });
+  };
+
+  return {
   messages: [],
   conversationId: uuid(),
   conversationTitle: null,
@@ -83,6 +99,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelLoaded: false,
   modelPath: null,
   error: null,
+  notice: null,
   pendingConfirmation: null,
 
   init: async () => {
@@ -114,9 +131,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // model_path on first run). Don't erase the selection on a transient load
     // failure — only mark it errored when the file is genuinely gone, so a
     // low-memory boot doesn't force re-downloading a multi-GB model.
+    let active: InstalledModel | null = null;
     try {
       await ensureLegacyMigration();
-      const active = await getActiveModel();
+      active = await getActiveModel();
       if (active && !isLoaded()) {
         const fileInfo = await FileSystem.getInfoAsync(active.filePath);
         if (fileInfo.exists) {
@@ -137,6 +155,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch (err) {
       console.warn("[chat-store] model auto-load failed:", err);
+      // A model IS selected but didn't load (transient low-memory boot, a bad
+      // session cache, etc). Say so — otherwise the chat shows the "no model —
+      // tap to download" banner and misrepresents a model that's actually there.
+      if (active) {
+        set({ notice: modelLoadFailureNotice(get().language, active.displayName) });
+      }
     }
 
     const info = getModelInfo();
@@ -236,7 +260,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await saveMessage(userMsg);
       await touchConversation(conversationId);
     } catch (err) {
-      console.error("Failed to persist user message:", err);
+      notePersistFailure("user message", err);
     }
 
     // Auto-title: use first user message as conversation title
@@ -313,7 +337,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           await saveMessage(pendingMsg);
           await touchConversation(conversationId);
         } catch (err) {
-          console.error("Failed to persist pending message:", err);
+          notePersistFailure("pending message", err);
         }
         return;
       }
@@ -343,7 +367,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await saveMessage(assistantMsg);
       await touchConversation(conversationId);
     } catch (err) {
-      console.error("Failed to persist assistant message:", err);
+      notePersistFailure("assistant message", err);
     }
   },
 
@@ -393,7 +417,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await updateMessageToolResult(pending.messageId, toolResultStr);
     } catch (err) {
-      console.error("Failed to persist tool result:", err);
+      notePersistFailure("tool result", err);
     }
   },
 
@@ -460,4 +484,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const info = getModelInfo();
     set({ modelLoaded: info.loaded, modelPath: info.path ?? null });
   },
-}));
+
+  dismissNotice: () => set({ notice: null }),
+  };
+});
