@@ -1,10 +1,16 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
-import { View, ActivityIndicator, AppState } from "react-native";
+import {
+  View,
+  ActivityIndicator,
+  AppState,
+  NativeEventEmitter,
+  NativeModules,
+} from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useChatStore } from "../lib/store/chat-store";
-import { unloadEmbeddingModel } from "../lib/llm/embed-engine";
+import { unloadEmbeddingModel, isEmbeddingLoaded } from "../lib/llm/embed-engine";
 import { colors } from "../lib/theme";
 
 export default function RootLayout() {
@@ -24,6 +30,25 @@ export default function RootLayout() {
       if (state === "background") {
         unloadEmbeddingModel().catch(() => {});
       }
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    // Android low-memory pressure. RN's AppState `memoryWarning` never fires on
+    // Android, so SystemActionsModule hooks native onTrimMemory and forwards it
+    // here (already filtered to real pressure). We drop only the cheap-to-rebuild
+    // embedding context (~1s to reload); the chat model stays resident by design
+    // (ADR-016) — if the OS still kills us, the foreground service restarts and
+    // the prefix session cache makes the cold start cheap.
+    const mod = NativeModules.SystemActionsModule;
+    if (!mod) return;
+    const emitter = new NativeEventEmitter(mod);
+    const sub = emitter.addListener("memoryWarning", (level: number) => {
+      if (isEmbeddingLoaded()) {
+        console.log(`[MemoryPressure] releasing embed context (trim level ${level})`);
+      }
+      unloadEmbeddingModel().catch(() => {});
     });
     return () => sub.remove();
   }, []);
