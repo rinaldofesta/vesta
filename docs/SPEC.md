@@ -1,9 +1,9 @@
 # Vesta — Technical Specifications (SPEC)
 
-**Version:** 2.0  
-**Data:** 8 Marzo 2026  
-**Autore:** Cosmico Engineering  
-**Status:** Final Draft  
+**Version:** 2.1
+**Data:** 7 Luglio 2026 (design originale: 8 Marzo 2026)
+**Autore:** Cosmico Engineering
+**Status:** Living document — sezioni implementate allineate al codice (Fase 0–4)
 **Tagline:** *Intelligence that never leaves home.*
 
 ---
@@ -14,56 +14,54 @@
 vesta/
 ├── apps/
 │   ├── mobile/                    # React Native + Expo
-│   │   ├── app/                   # Schermate (Expo Router)
+│   │   ├── app/                   # Schermate (Expo Router): chat, history, models, documents, settings
 │   │   ├── components/            # Componenti UI riutilizzabili
-│   │   ├── lib/                   # Logica cross-platform
-│   │   │   ├── orchestrator/      # Core brain (TS)
-│   │   │   ├── tools/             # Tool definitions (TS)
-│   │   │   ├── storage/           # SQLite + sqlite-vec (TS)
-│   │   │   ├── rag/               # Document pipeline (TS)
-│   │   │   └── hub/               # Mac Hub connection (TS) (parcheggiato — non ancora creato)
-│   │   ├── native/                # Native modules
-│   │   │   ├── android/           # Kotlin: llama.cpp bridge, Intents, Service
-│   │   │   └── ios/               # Swift: MLX bridge, App Intents (futuro)
+│   │   ├── lib/                   # Logica cross-platform (TS)
+│   │   │   ├── orchestrator/      # Core brain: prompt builder (V4), parser, dispatcher, memorie, retriever
+│   │   │   ├── llm/               # Wrapper llama.rn: chat engine, embed engine, perf config, session cache
+│   │   │   ├── tools/             # Tool definitions + confirmation gate
+│   │   │   ├── documents/         # Pipeline RAG: parser, chunker, cosine similarity
+│   │   │   ├── models/            # Catalogo curato + download manager + registry
+│   │   │   ├── native/            # Bridge TS verso i moduli Kotlin + reminders (expo-notifications)
+│   │   │   ├── storage/           # SQLite (expo-sqlite) + migrazioni
+│   │   │   └── store/             # Stato Zustand
+│   │   ├── native/
+│   │   │   └── android/           # Kotlin: SystemActions, VestaService, widget, voice activity
+│   │   ├── plugins/               # Config plugin Expo (copia/registra il codice nativo al prebuild)
 │   │   └── assets/
 │   │
 │   └── mac-hub/                   # Node.js server (parcheggiato — non ancora creato)
-│       ├── src/
-│       │   ├── server.ts          # WebSocket + mDNS
-│       │   ├── ollama-client.ts   # Client Ollama
-│       │   └── protocol.ts        # Shared types
-│       └── package.json
-│
-├── packages/
-│   └── shared/                    # Codice condiviso
-│       ├── protocol.ts            # Tipi WebSocket
-│       ├── tool-schema.ts         # Definizioni tool
-│       └── types.ts               # Tipi comuni
 │
 ├── scripts/
-│   ├── benchmark/                 # Script Fase 0
-│   │   ├── run-fc-benchmark.ts    # Benchmark function calling
-│   │   ├── prompts_it.jsonl       # Dataset prompt italiani
-│   │   └── analyze-results.ts     # Analisi risultati
-│   └── data/
-│       └── seed-recipes.ts        # Seed knowledge base
+│   └── benchmark/                 # Benchmark Fase 0 (run.ts, prompts JSONL, system prompt sync-copy, archive/)
 │
 ├── docs/
 │   ├── PRD.md
-│   ├── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md            # Include gli ADR (§7)
 │   ├── SPEC.md                    # Questo file
-│   └── ADR/                       # Architectural Decision Records
+│   ├── GAMEPLAN.md
+│   └── FASE0-RESULTS.md
 │
-├── turbo.json                     # Turborepo config
 ├── package.json                   # Root workspace
 └── README.md
 ```
+
+> L'inferenza llama.cpp arriva via **llama.rn** (dipendenza npm) — non esiste un
+> bridge NDK scritto in casa. Il Kotlin è limitato a Intents, Foreground Service,
+> widget e voce (ADR-002/006).
 
 ---
 
 ## 2. Schema Database
 
-### 2.1 SQLite Principale (conversations.db)
+### 2.1 SQLite Principale (vesta.db)
+
+> **Stato implementazione**: le tabelle attive sono `conversations`, `messages`,
+> `memories`, `knowledge_files`, `config` (baseline) + `models` (migrazione v1) +
+> `documents`/`chunks` (migrazione v2, vedi §2.2). Migrazioni via `PRAGMA
+> user_version` con array `MIGRATIONS` applicato in transazione atomica
+> (`lib/storage/database.ts`). `scheduled_tasks` qui sotto è design per una fase
+> futura — non ancora creata.
 
 ```sql
 -- ============================================================
@@ -92,7 +90,7 @@ CREATE TABLE messages (
   content         TEXT NOT NULL,           -- Testo del messaggio
   tool_call       TEXT,                     -- JSON: { tool, parameters } se presente
   tool_result     TEXT,                     -- JSON: { success, data, message } se presente
-  model_used      TEXT,                     -- es. "qwen3:4b", "functiongemma:270m"
+  model_used      TEXT,                     -- es. "qwen3-4b-instruct-2507-q4_k_m"
   tokens_in       INTEGER,                 -- Token di input consumati
   tokens_out      INTEGER,                 -- Token generati
   latency_ms      INTEGER,                 -- Tempo totale di generazione
@@ -169,51 +167,52 @@ CREATE TABLE config (
   value TEXT NOT NULL
 );
 
--- Valori di default
-INSERT INTO config VALUES ('model_primary', 'qwen3:4b');
-INSERT INTO config VALUES ('model_classifier', 'functiongemma:270m');
-INSERT INTO config VALUES ('model_idle_timeout_ms', '300000');
-INSERT INTO config VALUES ('hub_enabled', 'true');
-INSERT INTO config VALUES ('hub_auto_connect', 'true');
+-- Valori di default (seed effettivi in lib/storage/database.ts)
 INSERT INTO config VALUES ('language', 'it');
 INSERT INTO config VALUES ('confirm_destructive_actions', 'true');
-INSERT INTO config VALUES ('max_context_messages', '10');
+
+-- Mai implementati (design marzo 2026): 'model_classifier' (cascata scartata,
+-- ADR-007), 'model_idle_timeout_ms' (nessun auto-unload, ADR-015),
+-- 'hub_enabled'/'hub_auto_connect' (Mac Hub parcheggiato, ADR-010).
+-- Il modello attivo vive nella tabella `models` (is_active), non in config.
 ```
 
-### 2.2 sqlite-vec (vectors.db)
+### 2.2 Vettori RAG (stessa vesta.db — NIENTE sqlite-vec)
+
+> Il design originale prevedeva sqlite-vec (tabella virtuale `vec0`, HNSW).
+> **Mai implementato**: expo-sqlite non può caricare estensioni native (ADR-008).
+> Gli embedding sono BLOB float32 nella tabella `chunks`; il retrieval è una
+> scansione brute-force con cosine similarity in TypeScript
+> (`lib/documents/similarity.ts` + `lib/orchestrator/document-retriever.ts`).
+
+Schema reale (migrazione v2, `lib/storage/database.ts`):
 
 ```sql
--- Tabella virtuale per ricerca vettoriale
--- Creata via sqlite-vec extension
-
-CREATE VIRTUAL TABLE doc_embeddings USING vec0(
+CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY,
-  embedding FLOAT[384]                 -- 384 dimensioni per nomic-embed-text
+  filename TEXT NOT NULL,
+  mime TEXT,
+  size_bytes INTEGER DEFAULT 0,
+  chunk_count INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL
 );
 
--- Metadata associata ai chunk
-CREATE TABLE doc_chunks (
-  id          TEXT PRIMARY KEY,
-  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  chunk_index INTEGER NOT NULL,
-  content     TEXT NOT NULL,           -- Testo del chunk
-  char_start  INTEGER,                 -- Posizione nel documento originale
-  char_end    INTEGER,
-  page_number INTEGER,                 -- Per PDF
-  created_at  INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  token_count INTEGER DEFAULT 0,
+  embedding BLOB,                      -- float32 raw bytes, L2-normalized (768 dim)
+  created_at INTEGER NOT NULL
 );
 
-CREATE INDEX idx_chunks_doc ON doc_chunks(document_id, chunk_index);
-
--- Query di ricerca semantica:
--- SELECT dc.content, dc.page_number, dc.document_id,
---        vec_distance_cosine(de.embedding, ?) as distance
--- FROM doc_embeddings de
--- JOIN doc_chunks dc ON dc.id = de.id
--- WHERE distance < 0.5
--- ORDER BY distance
--- LIMIT 5;
+CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 ```
+
+La "query semantica" è codice TS, non SQL: si caricano gli embedding dei chunk,
+si calcola il dot product con l'embedding della query (entrambi L2-normalized →
+cosine), si tengono i top-K sopra la soglia di rilevanza 0.28.
 
 ---
 
@@ -498,13 +497,15 @@ export function annotateUserMessage(lang, at, text) {
                                                   │
                                           ┌───────▼───────┐
                                           │  Embedder     │
-                                          │  (llama.cpp)  │
+                                          │  (2° contesto │
+                                          │   llama.rn,   │
+                                          │   nomic-embed)│
                                           └───────┬───────┘
                                                   │
                                      ┌────────────▼────────────┐
-                                     │  sqlite-vec + SQLite    │
-                                     │  (doc_embeddings +      │
-                                     │   doc_chunks)           │
+                                     │  SQLite (vesta.db)      │
+                                     │  documents + chunks     │
+                                     │  (embedding BLOB f32)   │
                                      └─────────────────────────┘
 ```
 
@@ -531,17 +532,18 @@ export interface ChunkOptions {
 ### 4.3 Specifiche Embedding
 
 ```typescript
-// lib/rag/embedder.ts
+// lib/llm/embed-engine.ts
 
-// Modello: nomic-embed-text (137M params, GGUF)
-// Dimensioni output: 384
-// Formato: Float32Array
+// Modello: nomic-embed-text-v1.5 (137M params, GGUF)
+// Dimensioni output: 768
+// Formato: Float32Array → salvato come BLOB float32
 // Normalizzazione: L2 (cosine similarity via dot product)
+// Runtime: SECONDO contesto llama.rn accanto al modello chat;
+// rilasciato quando l'app va in background, ricaricato lazy.
 
 export interface EmbedderConfig {
   model: string;           // "nomic-embed-text-v1.5.Q8_0.gguf"
-  dimensions: 384;
-  batchSize: 32;           // Chunk da embeddare in batch
+  dimensions: 768;
   prefix: {
     query: "search_query: ";    // Prefisso per query
     document: "search_document: "; // Prefisso per documenti
@@ -552,61 +554,55 @@ export interface EmbedderConfig {
 ### 4.4 Retrieval
 
 ```typescript
-// lib/rag/retriever.ts
+// lib/orchestrator/document-retriever.ts
 
 export interface RetrievalOptions {
   query: string;
   maxChunks: number;              // Default: 5
-  minSimilarity: number;          // Default: 0.3 (cosine)
-  documentFilter?: string;        // Filtra per documento specifico
-  diversify: boolean;             // Default: true (MMR per diversità)
+  minSimilarity: number;          // 0.28 — soglia di rilevanza (MIN_SCORE)
 }
 
-// Algoritmo:
-// 1. Embed query con prefisso "search_query: "
-// 2. Ricerca vettoriale in sqlite-vec (top K * 2)
-// 3. Se diversify=true, applica Maximal Marginal Relevance (MMR)
-//    per evitare chunk troppo simili tra loro
-// 4. Ritorna top K chunk con metadata (documento, pagina, posizione)
+// Algoritmo (implementato):
+// 1. Embed query con prefisso "search_query: " (2° contesto llama.rn)
+// 2. Scansione brute-force: cosine (dot product, vettori L2-normalized)
+//    su tutti gli embedding BLOB della tabella chunks — in TypeScript
+// 3. Soglia di rilevanza: se anche il best match è < 0.28, si risponde
+//    "niente di rilevante" invece di iniettare chunk fuori tema
+// 4. Ritorna top K chunk (testo + documento di provenienza); il query loop
+//    li re-inietta come tool result per la risposta groundata
+// (MMR/diversificazione: design futuro, non implementato)
 ```
 
 ---
 
 ## 5. Specifiche Native Module Android
 
-### 5.1 LlamaCppModule (Kotlin + JNI)
+### 5.1 LLM Engine — llama.rn (nessun modulo Kotlin in casa)
 
-```kotlin
-// native/android/LlamaCppModule.kt
+> Il design originale prevedeva un `LlamaCppModule` Kotlin+JNI scritto in casa.
+> **Sostituito da llama.rn** (binding React Native ufficiale di llama.cpp,
+> ADR-006): il modulo nativo arriva come dipendenza npm, il nostro codice è il
+> wrapper TypeScript.
 
-@ReactModule(name = "LlamaCppModule")
-class LlamaCppModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+```typescript
+// lib/llm/llm-engine.ts — contesto CHAT
 
-  // Inizializza il modello
-  @ReactMethod
-  fun initialize(modelPath: String, options: ReadableMap, promise: Promise)
-  // options: { nGpuLayers, contextSize, threads, kvCacheType }
+loadModel(path, perfConfig)   // → initLlama({ model, n_ctx, n_threads,
+                              //     cache_type_k/v, flash_attn_type, use_mlock })
+generate(messages, onToken)   // → context.completion({ messages, n_predict,
+                              //     penalty_repeat, ... }) — streaming via TokenData;
+                              //     NIENTE grammar: JSON via prompt + retry (§3.4)
+stopGeneration()              // → stopCompletion() (con guardia stoppedByUser)
+snapshotPrefixSession(...)    // → saveSession: prefix KV cache su disco
+loadSessionFile(path)         // → loadSession: restore al boot, prima di ogni completion
+clearKvCache() / getModelInfo() / unloadModel()
 
-  // Genera testo (streaming via eventi)
-  @ReactMethod
-  fun generate(prompt: String, options: ReadableMap, promise: Promise)
-  // options: { maxTokens, temperature, topP, topK, stopSequences, grammarJson }
-  // Emette eventi: "onToken", "onComplete", "onError"
+// lib/llm/embed-engine.ts — contesto EMBEDDING (secondo contesto llama.rn)
+embed(text)                   // → Float32Array L2-normalized (768 dim)
+unloadEmbeddingModel()        // rilasciato su AppState background, reload lazy
 
-  // Calcola embedding
-  @ReactMethod
-  fun embed(text: String, promise: Promise)
-  // Ritorna: { embedding: number[] }
-
-  // Scarica modello dalla RAM
-  @ReactMethod
-  fun unload(promise: Promise)
-
-  // Info modello caricato
-  @ReactMethod
-  fun getModelInfo(promise: Promise)
-  // Ritorna: { name, parameters, quantization, contextLength, loaded }
-}
+// lib/llm/perf-config.ts — settings utente (default OFF):
+// CPU threads, KV cache q8_0 + flash attention, mlock
 ```
 
 ### 5.2 SystemActionsModule (Kotlin)
@@ -901,14 +897,14 @@ log.error('native', 'Intent failed', { intent: 'ACTION_SET_ALARM', error: '...' 
   },
   "devDependencies": {
     "typescript": "~5.6",
-    "vitest": "^3"
+    "jest": "jest-expo preset (20+ suite in lib/**/__tests__)"
   }
 }
 ```
 
-**Native dependencies** (non in package.json, compilate separatamente):
-- `llama.cpp` (C++, compilato via Android NDK)
-- `sqlite-vec` (C, compilato come estensione SQLite)
+**Native dependencies**:
+- `llama.rn` (npm — compila llama.cpp per arm64 via NDK durante il build Android)
+- Nessuna estensione SQLite (sqlite-vec scartato, ADR-008)
 
 ### 9.2 Mac Hub (parcheggiato)
 
@@ -934,7 +930,7 @@ Prima di scrivere codice, verifica di avere:
 - [ ] Modelli scaricati: `qwen3:4b`, `qwen3:8b`, `gemma3:4b`, `llama3.2:3b`
 - [ ] Android Studio installato con Android NDK (per compilazione llama.cpp)
 - [ ] Device Android fisico per testing (almeno 8GB RAM, Snapdragon 8 Gen 2+)
-- [ ] Node.js 22+ e pnpm installati
+- [ ] Node.js 18+ e npm installati (install con `--legacy-peer-deps`, vedi CONTRIBUTING.md)
 - [ ] Expo CLI installato (`npx expo`)
 - [ ] Dataset `prompts_it.jsonl` completato (minimo 100 entry)
 - [ ] Script benchmark funzionante e testato su almeno un modello

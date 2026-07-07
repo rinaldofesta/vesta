@@ -1,10 +1,15 @@
 # Vesta — Architecture Document
 
-**Version:** 2.0  
-**Data:** 8 Marzo 2026  
-**Autore:** Cosmico Engineering  
-**Status:** Final Draft  
+**Version:** 3.0
+**Data:** 7 Luglio 2026
+**Autore:** Cosmico Engineering
+**Status:** Living document — allineato all'implementazione (Fase 0–4)
 **Tagline:** *Intelligence that never leaves home.*
+
+> Questo documento descrive l'architettura COME IMPLEMENTATA e verificata su device
+> (Pixel 10 Pro) attraverso le Fasi 0–4. Le decisioni sono tracciate negli ADR (§7):
+> dove la realtà ha superato il design originale di marzo, l'ADR corrispondente è
+> marcato come superato o emendato.
 
 ---
 
@@ -14,9 +19,9 @@ Ogni decisione in questo documento deriva da cinque principi, in ordine di prior
 
 1. **Offline-first**: ogni feature DEVE funzionare senza internet. Se richiede rete, è un enhancement, non un requisito.
 2. **Model-validated**: nessuna infrastruttura viene costruita prima che il modello dimostri di poter eseguire il task. I dati guidano le decisioni, non le intuizioni.
-3. **Layer independence**: ogni layer funziona indipendentemente. Se rimuovi il Mac Hub, il telefono funziona. Se rimuovi il RAG, l'assistente risponde. Se rimuovi le System Actions, resta un chatbot locale.
-4. **Minimal native**: il codice nativo (Kotlin/Swift/C++) è limitato al minimo necessario (inferenza LLM, Intents di sistema, Foreground Service). Tutto il resto è TypeScript cross-platform.
-5. **Single runtime**: un solo motore di inferenza (llama.cpp) per testo, function calling e embedding. Zero dipendenze extra.
+3. **Layer independence**: ogni layer funziona indipendentemente. Se rimuovi il RAG, l'assistente risponde. Se rimuovi le System Actions, resta un chatbot locale.
+4. **Minimal native**: il codice nativo (Kotlin) è limitato al minimo necessario (Intents di sistema, Foreground Service, widget/voce). L'inferenza LLM arriva via llama.rn (binding React Native di llama.cpp). Tutto il resto è TypeScript cross-platform.
+5. **Single runtime**: un solo motore di inferenza (llama.cpp, via llama.rn) per testo E embedding. Zero runtime aggiuntivi.
 
 ---
 
@@ -24,64 +29,55 @@ Ogni decisione in questo documento deriva da cinque principi, in ordine di prior
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      DEVICE (Android / iOS)                      │
+│                DEVICE (Android — iOS parcheggiato)                │
 │                                                                   │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │                    React Native App (TypeScript)             │ │
 │  │                                                              │ │
 │  │  ┌──────────┐  ┌──────────────┐  ┌───────────────────────┐ │ │
-│  │  │  Chat UI  │  │  Doc Viewer  │  │  Settings / Status    │ │ │
+│  │  │  Chat UI  │  │  Documents /  │  │  Models / Settings /  │ │ │
+│  │  │           │  │  Knowledge    │  │  History              │ │ │
 │  │  └────┬─────┘  └──────┬───────┘  └───────────────────────┘ │ │
 │  │       │               │                                      │ │
 │  │  ┌────▼───────────────▼──────────────────────────────────┐  │ │
 │  │  │              ORCHESTRATOR (TypeScript)                  │  │ │
 │  │  │                                                        │  │ │
-│  │  │  Message ──► Router ──► Tool Dispatcher ──► Response   │  │ │
-│  │  │               │              │                         │  │ │
-│  │  │               ▼              ▼                         │  │ │
-│  │  │          Conversation    Tool Registry                 │  │ │
-│  │  │          Manager         (declarative)                 │  │ │
+│  │  │  Message ──► Prompt Builder ──► LLM ──► Parser ──►     │  │ │
+│  │  │              (V4: static prefix)        Tool Dispatcher │  │ │
+│  │  │                                         (+ confirm gate)│  │ │
 │  │  └────────────┬───────────────┬───────────────────────────┘  │ │
 │  └───────────────┼───────────────┼──────────────────────────────┘ │
 │                  │               │                                 │
 │  ┌───────────────▼───────────────▼──────────────────────────────┐ │
-│  │                   NATIVE BRIDGE (Kotlin / Swift)              │ │
+│  │                      NATIVE LAYER                             │ │
 │  │                                                                │ │
 │  │  ┌────────────────┐  ┌─────────────────┐  ┌───────────────┐  │ │
-│  │  │  LLM Engine    │  │  System Actions  │  │  Foreground   │  │ │
-│  │  │  (llama.cpp)   │  │  (Intents)       │  │  Service      │  │ │
+│  │  │  llama.rn      │  │  SystemActions   │  │  VestaService │  │ │
+│  │  │  (llama.cpp)   │  │  (Kotlin)        │  │  (Kotlin FGS) │  │ │
 │  │  │                │  │                   │  │               │  │ │
-│  │  │  - inference   │  │  - alarm          │  │  - keeps LLM  │  │ │
-│  │  │  - embedding   │  │  - calendar       │  │    in memory  │  │ │
-│  │  │  - tokenize    │  │  - contacts       │  │  - notification│ │ │
-│  │  │                │  │  - reminder        │  │  - auto-reload│  │ │
-│  │  └────────────────┘  │  - phone/sms      │  └───────────────┘  │ │
-│  │                      │  - navigation      │                     │ │
-│  │                      │  - file access     │                     │ │
-│  │                      └─────────────────┘                       │ │
+│  │  │  - chat ctx    │  │  - alarm/timer    │  │  - keep-alive │  │ │
+│  │  │  - embed ctx   │  │  - calendar r/w   │  │    notification│ │ │
+│  │  │  - save/load   │  │  - contacts       │  │  + Widget &   │  │ │
+│  │  │    session     │  │  - dial/sms       │  │    Voice      │  │ │
+│  │  └────────────────┘  │  - navigation     │  │    activities │  │ │
+│  │                      └─────────────────┘  └───────────────┘  │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │                    LOCAL STORAGE                               │   │
 │  │                                                                │   │
-│  │  ┌──────────────┐  ┌────────────────┐  ┌──────────────────┐  │   │
-│  │  │  SQLite       │  │  sqlite-vec    │  │  Model Files     │  │   │
-│  │  │  (messages,   │  │  (embeddings,  │  │  (.gguf)         │  │   │
-│  │  │   memories,   │  │   doc chunks)  │  │                  │  │   │
-│  │  │   tasks)      │  │                │  │                  │  │   │
-│  │  └──────────────┘  └────────────────┘  └──────────────────┘  │   │
+│  │  ┌────────────────────────────┐  ┌──────────────────────┐    │   │
+│  │  │  SQLite (expo-sqlite)      │  │  File storage        │    │   │
+│  │  │  messages, conversations,  │  │  - modelli .gguf     │    │   │
+│  │  │  memories, knowledge_files,│  │  - session cache     │    │   │
+│  │  │  config, models, documents,│  │    (prefix KV state) │    │   │
+│  │  │  chunks (embedding BLOB)   │  │                      │    │   │
+│  │  └────────────────────────────┘  └──────────────────────┘    │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│                    ┌──── WiFi LAN (opzionale) ────┐                 │
-│                    │                               │                 │
-└────────────────────┼───────────────────────────────┼─────────────────┘
-                     │                               │
-              ┌──────▼───────────────────────────────▼──────┐
-              │              MAC HUB (Opzionale)             │
-              │                                              │
-              │  Ollama (70B/235B) ◄── WebSocket ──► mDNS   │
-              │                                              │
-              └──────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────┘
+
+           Mac Hub (LAN, 70B via Ollama + WebSocket + mDNS)
+           ⏸️ PARCHEGGIATO — re-scope Android-first, vedi §6 e GAMEPLAN.md
 ```
 
 ---
@@ -92,294 +88,269 @@ Ogni decisione in questo documento deriva da cinque principi, in ordine di prior
 
 Interfaccia chat minimale. Non è il differenziatore del prodotto — l'intelligenza lo è.
 
-**Responsabilità**: input testo/voce, rendering messaggi (markdown), visualizzazione azioni eseguite, picker documenti, indicatore stato modello/connessione.
+**Responsabilità**: input testo, rendering messaggi (markdown), step di conferma per le azioni, picker documenti/knowledge, indicatore stato modello, pulsante Stop.
 
-**NON responsabilità**: nessuna logica di business, nessun accesso diretto al modello, nessuna gestione stato conversazione.
+**NON responsabilità**: nessuna logica di business, nessun accesso diretto al modello, nessuna gestione stato conversazione (sta nello store Zustand + orchestrator).
 
-**Librerie chiave**: `react-native` + `expo`, `expo-document-picker`, `expo-speech` (per input vocale via API di sistema).
+**Input vocale**: opzionale, via il widget home-screen — un'activity trasparente delega al riconoscitore vocale di sistema (`RecognizerIntent.ACTION_RECOGNIZE_SPEECH`) e re-inietta il testo via deep link. Nessun modello STT in-app.
+
+**Librerie chiave**: `react-native` + `expo` (Expo Router), `expo-document-picker`, `zustand`.
 
 ### 3.2 Orchestrator (TypeScript, cross-platform)
 
 Il cuore logico dell'applicazione. Puro TypeScript senza dipendenze native.
 
 ```
-Messaggio utente
+Messaggio utente (+ createdAt)
        │
        ▼
-┌──────────────┐     ┌──────────────────────┐
-│  Preprocessor │────►│  Context Builder      │
-│  (normalize,  │     │  (history, memories,  │
-│   detect lang)│     │   device context,     │
-│               │     │   available tools)    │
-└──────────────┘     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │  LLM Inference       │
-                     │  (via Native Bridge) │
-                     │                      │
-                     │  System Prompt +     │
-                     │  Tool Schema +       │
-                     │  Context + Message   │
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │  Response Parser     │
-                     │                      │
-                     │  JSON tool call?     │
-                     │  ├─ YES → validate   │
-                     │  │   → dispatch tool │
-                     │  │   → format result │
-                     │  └─ NO → text reply  │
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │  Response Builder    │
-                     │  (format, citations, │
-                     │   action confirmations│
-                     └──────────────────────┘
+┌───────────────────────┐     ┌───────────────────────────────┐
+│  annotateUserMessage   │     │  buildStablePrefix (STATICO)   │
+│  [Contesto temporale:  │     │  persona + regole + tool       │
+│   ...] dal createdAt   │     │  schemas + memorie + knowledge │
+└──────────┬────────────┘     └──────────────┬────────────────┘
+           │                                  │
+           └────────────┬─────────────────────┘
+                        ▼
+             ┌──────────────────────┐
+             │  llama.rn completion │   history byte-identica →
+             │  (chat context)      │   ogni turno è un puro
+             └──────────┬───────────┘   append sulla KV cache
+                        ▼
+             ┌──────────────────────┐
+             │  Response Parser     │
+             │  JSON tool call?     │
+             │  ├─ YES → validate + │
+             │  │   normalize params│
+             │  │   → confirm gate  │
+             │  │   → dispatch tool │
+             │  │   → (read tools:  │
+             │  │      query loop)  │
+             │  └─ NO → text reply  │
+             │  JSON malformato →   │
+             │  retry 1x correzione │
+             │  → fallback testo    │
+             └──────────────────────┘
 ```
 
-**Moduli chiave**:
+**Moduli chiave** (`apps/mobile/lib/orchestrator/`):
 
-- `orchestrator.ts`: entry point, gestisce il flusso messaggio-risposta
-- `router.ts`: costruisce il prompt con tool schema, determina se serve function calling
-- `tool-registry.ts`: registro dichiarativo dei tool disponibili
-- `tool-dispatcher.ts`: esegue il tool chiamato, gestisce errori e retry
-- `conversation-manager.ts`: mantiene history, gestisce multi-turn, compatta contesto
-- `memory-manager.ts`: estrae e archivia fatti a lungo termine sull'utente
-- `context-builder.ts`: assembla il prompt completo (system + tools + history + context)
+- `orchestrator.ts` — entry point, flusso messaggio→risposta, query loop dei read tools, retry JSON
+- `prompt-builder.ts` — prefisso stabile V4 + `buildTurnContext`/`annotateUserMessage` (vedi §4.3)
+- `response-parser.ts` — parsing tool-call JSON vs testo libero
+- `tool-dispatcher.ts` — validazione/normalizzazione parametri, dispatch verso i moduli nativi
+- `memory-manager.ts` / `memory-gate.ts` — estrazione e ranking dei fatti a lungo termine
+- `knowledge-manager.ts` / `knowledge-format.ts` — file .md/.txt come contesto personale
+- `document-retriever.ts` — retrieval RAG (cosine brute-force, soglia 0.28)
+- `session-warmer.ts` — warm/restore della session cache al boot (vedi §4.3)
+- `date-utils.ts` — date math locale (no UTC drift a mezzanotte)
 
-### 3.3 Native Bridge
+I read tools (`get_calendar_events`, `search_contacts`, `query_document`) sono marcati `returnsData`: il risultato viene re-iniettato e il modello genera una risposta groundata sui dati reali (query loop).
 
-Il layer sottile che collega TypeScript al sistema operativo. Implementato separatamente per Android (Kotlin) e iOS (Swift).
+### 3.3 Native Layer
 
-**Principio**: il native bridge è STUPIDO. Non contiene logica di business. Riceve comandi dall'orchestrator TypeScript e li esegue. L'intelligenza sta nell'orchestrator.
+Il layer sottile che collega TypeScript al sistema operativo.
 
-#### 3.3.1 LLM Engine (C++ via llama.cpp)
+**Principio**: il layer nativo è STUPIDO. Non contiene logica di business. L'intelligenza sta nell'orchestrator.
+
+#### 3.3.1 LLM Engine (llama.rn)
+
+L'inferenza NON usa un bridge NDK scritto in casa: usa **llama.rn** (binding React Native ufficiale di llama.cpp, ~0.11.x), che compila llama.cpp per arm64 e lo espone via JSI. Il wrapper TypeScript sta in `apps/mobile/lib/llm/`:
+
+```
+┌──────────────────────────────────────────────────────┐
+│              llm-engine.ts (chat context)              │
+│                                                        │
+│  loadModel(path, perfConfig) → initLlama               │
+│  generate(messages, onToken) → completion (streaming)  │
+│  stopGeneration()                                      │
+│  snapshotPrefixSession / loadSessionFile               │
+│    (saveSession/loadSession per la prefix cache)       │
+│  clearKvCache(), getModelInfo(), unloadModel()         │
+│                                                        │
+│  perf-config.ts: threads, KV-cache q8_0 + flash        │
+│  attention, mlock (opt-in, default OFF)                │
+├──────────────────────────────────────────────────────┤
+│              embed-engine.ts (embed context)            │
+│                                                        │
+│  SECONDO contesto llama.rn con nomic-embed-text:       │
+│  embed(text) → Float32Array (L2-normalized)            │
+│  Rilasciato quando l'app va in background,             │
+│  ricaricato lazy al prossimo uso.                       │
+└──────────────────────────────────────────────────────┘
+```
+
+Due proprietà architetturali decisive, misurate su device:
+
+- **KV-cache prefix reuse**: llama.rn riusa la KV cache in-memory per il più lungo prefisso di token comune tra completion consecutive. L'intera struttura del prompt (§4.3) è progettata attorno a questo fatto.
+- **Niente grammar constraint**: il JSON dei tool call è ottenuto via prompt engineering (schema iniettato nel system prompt) + parsing. Se il JSON è malformato, un singolo retry con prompt di correzione, poi fallback a testo libero. Accuratezza misurata: 98.9% tool / 100% JSON (Fase 0, easy+medium, thinking).
+
+Su Pixel (Tensor G5) l'inferenza è CPU-bound; su Adreno (Snapdragon) il backend GPU di llama.cpp accetta solo quant `Q4_0`/`Q6_K`.
+
+**iOS (parcheggiato)**: MLX-Swift era il candidato; nessun codice esiste.
+
+#### 3.3.2 System Actions (Kotlin)
 
 ```
 ┌──────────────────────────────────────────────────┐
-│                  LLM Engine API                    │
+│              SystemActionsModule                   │
 │                                                    │
-│  initialize(modelPath, options) → void             │
-│  generate(prompt, options) → AsyncIterator<Token>  │
-│  embed(text) → Float32Array                        │
-│  tokenize(text) → number[]                         │
-│  getModelInfo() → ModelInfo                        │
-│  unload() → void                                   │
-│                                                    │
-│  Options:                                          │
-│    temperature, top_p, top_k,                      │
-│    max_tokens, stop_sequences,                     │
-│    grammar (per JSON constraint)                   │
-└──────────────────────────────────────────────────┘
-```
-
-**Implementazione Android**: llama.cpp compilato via NDK (arm64-v8a). OpenCL per GPU Adreno su Snapdragon. CPU fallback con KleidiAI per kernel ARM ottimizzati. Il binding Android ufficiale auto-detecta l'hardware.
-
-**Implementazione iOS (futuro)**: MLX-Swift per inferenza nativa con accelerazione Metal/Neural Engine.
-
-#### 3.3.2 System Actions
-
-```
-┌──────────────────────────────────────────────────┐
-│              System Actions API                    │
-│                                                    │
-│  setAlarm(time, date?, label?) → Result            │
-│  createEvent(title, start, end, location?) → Result│
-│  setReminder(text, datetime) → Result              │
-│  makeCall(contact_or_number) → Result              │
-│  sendSMS(contact_or_number, text) → Result         │
-│  navigate(destination) → Result                    │
-│  searchContacts(query) → Contact[]                 │
-│  getCalendarEvents(date) → Event[]                 │
-│  openURL(url) → Result                             │
-│  setTimer(duration_seconds, label?) → Result        │
+│  setAlarm(time, label?)   → AlarmClock.ACTION_SET_ALARM
+│  setTimer(seconds, label?)→ AlarmClock.ACTION_SET_TIMER
+│  createEvent(...)         → Intent.ACTION_INSERT (calendar)
+│  getCalendarEvents(date)  → CalendarContract via ContentResolver
+│  searchContacts(query)    → ContactsContract via ContentResolver
+│  makeCall(number)         → Intent.ACTION_DIAL (nessun permesso: l'utente preme "chiama")
+│  sendSMS(number, text)    → Intent.ACTION_SENDTO (l'utente preme "invia")
+│  navigate(destination)    → Intent.ACTION_VIEW (google.navigation)
 │                                                    │
 │  Result: { success, message, error? }              │
 └──────────────────────────────────────────────────┘
 ```
 
-**Implementazione Android**: ogni metodo mappa direttamente su un Android Intent.
+**Nota**: `set_reminder` NON passa da qui — usa `expo-notifications` (notifica locale schedulata, lato TypeScript in `lib/native/reminders.ts`). Vedi ADR-009.
 
-- `setAlarm` → `AlarmClock.ACTION_SET_ALARM`
-- `createEvent` → `Intent.ACTION_INSERT` con `Events.CONTENT_URI`
-- `makeCall` → `Intent.ACTION_DIAL`
-- `sendSMS` → `Intent.ACTION_SENDTO`
-- `navigate` → `Intent.ACTION_VIEW` con URI `google.navigation`
-- `searchContacts` → `ContactsContract` via `ContentResolver`
-- `getCalendarEvents` → `CalendarContract` via `ContentResolver`
+Il codice Kotlin vive in `apps/mobile/native/android/` e viene copiato/registrato nel progetto Android da un config plugin Expo (`plugins/with-system-actions.js`) durante il prebuild.
 
-**Implementazione iOS (futuro)**: App Intents framework per le stesse azioni.
+#### 3.3.3 VestaService (Foreground Service, Kotlin)
 
-#### 3.3.3 Foreground Service (Android)
+Servizio Android `specialUse` con notifica persistente a bassa priorità. Fa UNA cosa: tiene vivo il processo (START_STICKY) così il modello resta caricato tra un turno e l'altro, e aggiorna il testo della notifica ("Modello pronto" / "Caricamento…").
 
-Servizio Android con notifica persistente che:
-- Tiene il modello LLM caricato in memoria
-- Ricarica il modello automaticamente dopo crash
-- Scarica il modello dopo N minuti di inattività (configurabile) per risparmiare RAM
-- Mostra stato nella notifica: "Modello pronto" / "Caricamento..." / "In attesa"
+**Cosa NON fa (design deliberato, vedi ADR-015)**: nessuno scaricamento automatico del modello dopo N minuti di inattività. Il modello chat resta residente finché il servizio vive; ricaricarlo costerebbe secondi e (senza session cache) decine di secondi di re-prefill. Il contesto di EMBEDDING invece viene rilasciato quando l'app va in background (è ricaricabile in ~1s ed è usato solo durante import/query documenti).
+
+**Widget + Voce**: un widget home-screen 2×2 (quick-chat + microfono) e una activity trasparente per l'input vocale di sistema completano il layer Kotlin.
 
 ### 3.4 Local Storage
 
 #### 3.4.1 SQLite (expo-sqlite)
 
-Database principale per dati strutturati. Schema nel documento SPEC.md.
+Database unico (`vesta.db`) per tutti i dati strutturati. Migrazioni via `PRAGMA user_version` + array `MIGRATIONS` applicato in transazione atomica (schema + bump versione insieme). Versione schema corrente: **2**.
 
-Contiene: conversazioni, messaggi, memorie utente, task schedulati, metadata documenti, configurazione.
+Tabelle: `messages`, `conversations`, `memories`, `knowledge_files`, `config` (baseline), `models` (v1 — catalogo/download), `documents` + `chunks` (v2 — RAG). Schema completo in SPEC.md §2.
 
-#### 3.4.2 sqlite-vec
+#### 3.4.2 Embeddings e retrieval (niente sqlite-vec)
 
-Estensione C per SQLite che aggiunge ricerca vettoriale HNSW. Compilata come shared library e caricata da SQLite.
+Il design originale prevedeva sqlite-vec come estensione SQLite (ADR-003). **Non è stato possibile**: expo-sqlite non può caricare estensioni native. La soluzione implementata (ADR-008):
 
-Contiene: embedding dei chunk di documenti, embedding delle memorie per ricerca semantica.
+- gli embedding (nomic-embed-text-v1.5, 768 dimensioni, L2-normalized) sono salvati come **BLOB float32** nella tabella `chunks`;
+- il retrieval è una **scansione brute-force con cosine similarity in TypeScript** (`lib/documents/similarity.ts`), con soglia di rilevanza 0.28 sotto la quale si risponde "niente di rilevante" invece di confabulare;
+- a scala telefono (decine di documenti, migliaia di chunk) la scansione è ampiamente sotto il costo di un singolo token di inferenza — verificato su device.
 
-#### 3.4.3 Model Files
+#### 3.4.3 Model files e session cache
 
-File `.gguf` nel storage locale dell'app. Scaricati dall'utente al primo avvio o tramite settings. Non inclusi nell'APK.
+File `.gguf` nello storage locale dell'app, scaricati dall'utente via catalogo in-app / repo HuggingFace / import locale. Non inclusi nell'APK.
+
+Accanto ai modelli vive la **prefix session cache** (`session-cache/`): lo stato KV del prefisso stabile del prompt, salvato con `saveSession` dopo il primo turno pulito e ripristinato con `loadSession` subito dopo il load del modello. Un solo file, chiave = hash(model path + kv-cache type + testo del prefisso); qualunque cambiamento (modello, memorie, knowledge, lingua, perf settings) la invalida. Attenzione al costo: llama.cpp serializza lo stato KV COMPLETO (~215 MB per Qwen3 4B f16 a ~1450 token), quindi i salvataggi sono debounced (120s) e saltati finché l'hash su disco è valido. Misurato: primo messaggio da 37.3s → 2.8s (13.4x).
 
 ---
 
-## 4. Flusso Dati: Caso d'Uso Completo
+## 4. Flusso Dati: Casi d'Uso Completi
 
 ### 4.1 "Fissa appuntamento dal dentista giovedì alle 15"
 
 ```
-1. [Chat UI] Utente digita messaggio
-2. [Orchestrator.preprocessor] Normalizza testo, rileva lingua (it)
-3. [Orchestrator.context_builder] Assembla prompt:
-   - System prompt con tool schema
-   - Ultimi 5 messaggi di history
-   - Data/ora corrente del device
-   - Tool disponibili (set_alarm, create_event, ...)
-4. [Native Bridge.LLM] Genera risposta con grammar constraint JSON
-5. [LLM Output]:
-   {
-     "tool": "create_event",
-     "parameters": {
-       "title": "Dentista",
-       "start": "2026-03-12T15:00:00",
-       "end": "2026-03-12T16:00:00"
-     },
-     "confirmation_message": "Appuntamento dal dentista fissato per giovedì 12 marzo alle 15:00."
-   }
-6. [Orchestrator.response_parser] Valida JSON, verifica schema tool
-7. [Orchestrator.tool_dispatcher] Chiama systemActions.createEvent(...)
-8. [Native Bridge.SystemActions] Lancia Intent.ACTION_INSERT
-9. [Android OS] Crea evento nel calendario
-10. [Native Bridge] Ritorna { success: true }
-11. [Orchestrator.response_builder] Costruisce risposta per l'utente
-12. [Chat UI] Mostra: "✅ Appuntamento dal dentista fissato per giovedì 12 marzo alle 15:00"
+1.  [Chat UI] Utente digita il messaggio (createdAt = ora di invio)
+2.  [Orchestrator] annotateUserMessage: prepende la riga
+    [Contesto temporale: giovedì 2026-07-09T14:30 (Europe/Rome). Oggi: ... Domani: ...]
+3.  [Orchestrator] Assembla i messaggi: system prompt STATICO (persona + regole +
+    tool schemas + memorie + knowledge) + history (ogni messaggio utente re-annotato
+    dal SUO createdAt → byte-identica al turno precedente) + messaggio corrente
+4.  [llama.rn] completion in streaming — la KV cache copre tutto il prompt del
+    turno precedente: viene prefillato solo il nuovo messaggio (~100 token, ~6s)
+5.  [LLM Output]:
+    { "tool": "create_event",
+      "parameters": { "title": "Dentista", "start": "2026-07-09T15:00:00" },
+      "message": "Appuntamento dal dentista fissato per giovedì alle 15:00." }
+6.  [Response Parser] Valida il JSON contro lo schema del tool;
+    normalizeToolParams ripara i formati vicini (es. datetime ISO su un campo date-only)
+7.  [Confirm gate] L'UI mostra l'azione con Conferma/Annulla (sempre per azioni
+    che modificano stato; make_call/send_sms sono sempre gated)
+8.  [Tool Dispatcher → SystemActionsModule] Intent.ACTION_INSERT
+9.  [Android OS] Apre l'editor evento del calendario precompilato
+10. [Chat UI] Messaggio di conferma onesto ("editor calendario aperto" — non
+    finge che l'evento sia già salvato)
 ```
 
 ### 4.2 "Cosa dice il contratto sulla clausola di recesso?" (RAG)
 
 ```
-1. [Chat UI] Utente digita domanda (documento già caricato in precedenza)
-2. [Orchestrator.router] Rileva intent "query_document"
-3. [Orchestrator.context_builder] Genera embedding della domanda
-4. [Native Bridge.LLM] embed("clausola di recesso contratto") → vector
-5. [sqlite-vec] SELECT chunk_text FROM doc_chunks
-   ORDER BY vec_distance(embedding, ?) LIMIT 5
-6. [Orchestrator.context_builder] Assembla prompt:
-   - System prompt RAG ("Rispondi basandoti SOLO su questi estratti")
-   - Top 5 chunk rilevanti
-   - Domanda utente
-7. [Native Bridge.LLM] Genera risposta
-8. [Orchestrator.response_builder] Formatta con citazioni dei chunk
-9. [Chat UI] Mostra risposta con riferimenti al documento
+1. [Chat UI] Domanda dell'utente (documento importato in precedenza dalla
+   schermata Documents: parse → chunk ~512 token → embed → BLOB in SQLite)
+2. [LLM] Il modello emette { "tool": "query_document", "parameters": { "query": ... } }
+   (il routing richiede un cue documentale: "nei miei documenti...", "il contratto...")
+3. [embed-engine] embed("search_query: clausola di recesso ...") → Float32Array
+4. [document-retriever] Cosine brute-force in TS su tutti i chunk;
+   soglia 0.28 → se anche il best match è debole: "niente di rilevante"
+5. [Query loop] I top chunk vengono re-iniettati come tool result e il modello
+   genera una risposta groundata SOLO sugli estratti
+6. [Chat UI] Risposta con riferimento al documento
 ```
+
+### 4.3 Architettura del prompt (V4) e KV cache
+
+Il vincolo che governa tutto il layout del prompt: **un solo token cambiato invalida la KV cache da quel punto in poi**. Su un phone il re-prefill del blocco tool-schema costa decine di secondi.
+
+```
+┌─ SYSTEM PROMPT — completamente STATICO (byte-identico tra i turni) ─┐
+│ persona + formato JSON + regole date STATICHE + tool schemas +      │
+│ memorie (ordine canonico per createdAt) + knowledge                 │
+└─────────────────────────────────────────────────────────────────────┘
+┌─ OGNI MESSAGGIO UTENTE (history re-renderizzata dal suo createdAt) ─┐
+│ [Contesto temporale: {giorno} {datetime-minuto} ({tz}).             │
+│  Oggi: {oggi}. Domani: {domani}]                                    │
+│ {testo utente}                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Conseguenze misurate (Pixel 10 Pro, Qwen3 4B):
+- turni warm: da re-prefill completo (~67s, layout V2) a **puro append piatto ~6s** (V4), con `n_past` = l'intero prompt del turno precedente;
+- cold start: 37.3s → 2.8s con la prefix session cache (§3.4.3);
+- l'estrazione memorie viene ACCODATA alla conversazione (condivide il prefisso KV) invece di girare come prompt standalone che evicterebbe la cache (ADR-013).
+
+Due invarianti, bloccate dai test (`prompt-builder.test.ts`, `history-stability.test.ts`):
+1. mai interpolare data/ora (o qualsiasi valore per-turno) nel system prompt;
+2. la history deve essere una funzione pura dei messaggi salvati — replay byte-identico per sempre.
+
+Limitazioni note accettate (dettagli in GAMEPLAN.md): slide della finestra a 20 messaggi, cambio timezone, aggiornamento del suffisso [Tool:] alla risoluzione del confirm gate — ognuna causa un singolo re-prefill bounded.
 
 ---
 
-## 5. Gestione Modelli: Strategia a Cascata
+## 5. Gestione Modelli
 
-### 5.1 Perché la Cascata
+### 5.1 Decisione: modello singolo (cascata scartata)
 
-Un singolo modello 4B deve fare due cose molto diverse: classificare velocemente ("è una sveglia o una domanda?") e generare risposte di qualità ("spiegami la Rivoluzione Francese"). Questi due task hanno requisiti opposti (velocità vs qualità).
+Il design originale prevedeva una cascata: FunctionGemma 270M come classificatore veloce (Layer 1) davanti a Qwen3 4B (Layer 2). **La Fase 0 l'ha resa superflua** (ADR-007): Qwen3 4B da solo raggiunge 97.8% di tool accuracy e 98.9% di JSON validity sul benchmark bilingue — il routing non è il collo di bottiglia, e un secondo modello avrebbe aggiunto RAM, complessità e un punto di fallimento senza guadagno misurabile.
 
-### 5.2 Configurazione di Default
+**Configurazione corrente**: un solo modello chat (default consigliato: Qwen3 4B Instruct 2507, Q4_K_M) + il modello embedding (nomic-embed, ~90 MB) in un secondo contesto. Il catalogo in-app è RAM-aware (1.7B per device low-RAM, 8B per flagship 12GB+).
 
-```
-Messaggio utente
-       │
-       ▼
-┌──────────────────────┐
-│  LAYER 1: Classifier │  FunctionGemma 270M (~0.2GB RAM)
-│  "È un comando?"     │  Tempo: ~50ms
-│                      │
-│  Output:             │
-│  - tool_call → JSON  │──────► Esecuzione diretta (fast path)
-│  - needs_llm → pass  │
-└──────────┬───────────┘
-           │ (solo se serve reasoning)
-           ▼
-┌──────────────────────┐
-│  LAYER 2: Reasoner   │  Qwen3 4B (~3GB RAM)
-│  "Genera risposta"   │  Tempo: ~2-5 secondi
-│                      │
-│  Output:             │
-│  - text response     │
-│  - complex tool_call │
-│  - RAG query         │
-└──────────────────────┘
-```
+### 5.2 Performance tuning (Fase 4)
 
-### 5.3 Decisione: Cascata vs Singolo Modello
+Tre leve utente in Settings (`lib/llm/perf-config.ts`), tutte OFF di default:
+- **CPU threads** — override del default di llama.rn;
+- **KV cache q8_0 + flash attention** — dimezza la RAM della KV cache (misurato: 146 MB vs ~283 MB f16 a pari stato) al costo di ~1.5x in velocità su CPU; utile per contesti lunghi su device RAM-limitati;
+- **mlock** — impedisce lo swap del modello.
 
-La Fase 0 (Model Validation) determina empiricamente se:
-- La cascata è più veloce (latenza end-to-end)
-- La cascata è più accurata (% comandi correttamente eseguiti)
-- Il costo RAM della cascata (0.2 + 3 = 3.2GB) è accettabile vs singolo modello (3GB)
-
-Se i dati mostrano che Qwen3 4B da solo è sufficientemente veloce e accurato nel routing, si elimina il Layer 1 e si semplifica l'architettura. I dati decidono, non le assunzioni.
+Un cambio di perf settings invalida per design la session cache (le celle KV sono salvate tipizzate).
 
 ---
 
-## 6. Comunicazione Mac Hub
+## 6. Comunicazione Mac Hub — ⏸️ PARCHEGGIATO
 
-### 6.1 Discovery
+> **Re-scope Android-first (giugno 2026, ADR-010):** il Mac Hub non è mai stato
+> costruito (`apps/mac-hub` non esiste). Il design qui sotto resta come riferimento
+> per una eventuale ripresa; nessuna parte dell'app dipende da esso.
 
-Il Mac Hub annuncia la propria presenza via mDNS (Bonjour):
-- Service type: `_vesta._tcp`
-- Port: 8420
-- TXT record: `version=1.0`, `models=llama3.1:70b,qwen3:235b`
+### 6.1 Discovery (design)
 
-L'app mobile esegue mDNS scan periodico sulla rete locale e si connette automaticamente quando trova un Hub.
+Il Mac Hub annuncerebbe la propria presenza via mDNS (Bonjour): service type `_vesta._tcp`, porta 8420, TXT record con versione e modelli disponibili. L'app farebbe scan periodico sulla LAN e si connetterebbe automaticamente.
 
-### 6.2 Protocollo WebSocket
+### 6.2 Protocollo WebSocket (design)
 
-```
-┌─────────────────────────────────────────────────┐
-│            WebSocket Protocol v1                  │
-│                                                   │
-│  Client (Mobile) → Server (Mac):                  │
-│                                                   │
-│  CHAT     { type, content, conversationId,        │
-│             context: { history, tools, device } }  │
-│  EMBED    { type, text }                           │
-│  UPLOAD   { type, filename, chunks: base64[] }     │
-│  PING     { type }                                 │
-│                                                   │
-│  Server (Mac) → Client (Mobile):                   │
-│                                                   │
-│  STREAM_START  { type, conversationId }            │
-│  STREAM_CHUNK  { type, token }                     │
-│  STREAM_END    { type, conversationId }            │
-│  EMBED_RESULT  { type, vector: number[] }          │
-│  UPLOAD_ACK    { type, documentId }                │
-│  PONG          { type, models: string[] }          │
-│  ERROR         { type, code, message }             │
-│                                                   │
-└─────────────────────────────────────────────────┘
-```
+Messaggi client→server: `CHAT`, `EMBED`, `UPLOAD`, `PING`. Server→client: `STREAM_START/CHUNK/END`, `EMBED_RESULT`, `UPLOAD_ACK`, `PONG`, `ERROR`. Spec completa in SPEC.md §7.
 
-### 6.3 Fallback Trasparente
+### 6.3 Fallback trasparente (design)
 
-L'orchestrator ha un connection manager che:
-1. Se Hub connesso → delega task complessi al Mac (modello grande, RAG documenti pesanti)
-2. Se Hub non connesso → processa tutto localmente (modello piccolo, qualità inferiore ma funzionale)
-3. Il switch è trasparente all'utente. La UI mostra un indicatore discreto ("🟢 Hub connesso" / "📱 Locale")
+Hub connesso → delega dei task pesanti al modello 70B; Hub assente → tutto locale. Switch trasparente, indicatore discreto nella UI.
 
 ---
 
@@ -393,41 +364,123 @@ L'orchestrator ha un connection manager che:
 
 **Alternative considerate**: MLC LLM (richiede ricompilazione per modello), ONNX Runtime (aggiunge secondo runtime), ExecuTorch (Meta-specifico, meno maturo).
 
-**Motivazione**: llama.cpp ha il binding Android ufficiale con auto-detection hardware, supporta qualsiasi modello GGUF senza ricompilazione, ha il supporto embedding nativo, e la community più grande (200K+ stars). Un solo runtime = meno bug, meno dimensione APK, meno manutenzione.
+**Motivazione**: llama.cpp supporta qualsiasi modello GGUF senza ricompilazione, ha il supporto embedding nativo, e la community più grande. Un solo runtime = meno bug, meno dimensione APK, meno manutenzione.
+
+**Stato**: confermata. Implementata via llama.rn (vedi ADR-006).
 
 ### ADR-002: React Native invece di Kotlin nativo
 
 **Contesto**: lo sviluppatore principale ha background TypeScript, non Kotlin.
 
-**Decisione**: React Native + Expo per la maggior parte dell'app. Kotlin solo per native module (llama.cpp bridge, Intents, Foreground Service).
+**Decisione**: React Native + Expo per la maggior parte dell'app. Kotlin solo per i moduli nativi.
 
-**Motivazione**: riduce il tempo di sviluppo del 60-70%. Il 90% della logica (orchestrator, router, conversation manager, UI) è TypeScript cross-platform. Quando si aggiunge iOS, si riscrive solo il native module (~500 righe).
+**Motivazione**: riduce il tempo di sviluppo del 60-70%. Il 90%+ della logica (orchestrator, prompt builder, RAG, storage, UI) è TypeScript cross-platform.
 
-### ADR-003: sqlite-vec invece di ChromaDB/ObjectBox
+**Stato**: confermata. Il Kotlin effettivo è ancora meno del previsto: SystemActions, VestaService, widget e voice activity — il bridge llama.cpp è llama.rn, non codice nostro.
+
+### ADR-003: sqlite-vec invece di ChromaDB/ObjectBox — ⚠️ SUPERATA da ADR-008
 
 **Contesto**: serve un vector store per RAG su mobile.
 
-**Decisione**: sqlite-vec (estensione C per SQLite).
+**Decisione (marzo 2026)**: sqlite-vec (estensione C per SQLite).
 
-**Alternative considerate**: ChromaDB (troppo pesante per mobile, richiede Python), ObjectBox (dipendenza Java/Kotlin pesante, vendor lock-in).
+**Esito**: mai implementata — expo-sqlite non può caricare estensioni native. Vedi ADR-008.
 
-**Motivazione**: sqlite-vec pesa ~100KB, si integra nel SQLite già presente in Android, supporta HNSW per ricerca approssimata. Zero dipendenze extra. Funziona identicamente su Android e iOS.
+### ADR-004: Foreground Service con model lifecycle management — ✏️ EMENDATA da ADR-015
 
-### ADR-004: Foreground Service con model lifecycle management
+**Contesto**: Android uccide i processi in background dopo pochi minuti. Ricaricare un modello 4B richiede secondi (e senza session cache, decine di secondi di prefill).
 
-**Contesto**: Android uccide i processi in background dopo pochi minuti. Ricaricare un modello 4B richiede 5-10 secondi.
+**Decisione (marzo 2026)**: Foreground Service con notifica persistente; scaricamento del modello dopo 5 minuti di inattività.
 
-**Decisione**: Foreground Service con notifica persistente. Il modello viene scaricato dalla RAM dopo 5 minuti di inattività e ricaricato on-demand.
-
-**Motivazione**: il Foreground Service è l'unico modo garantito per mantenere un processo attivo su Android. Lo scaricamento dopo inattività bilancia battery drain e reattività.
+**Esito**: il Foreground Service c'è; lo scaricamento automatico NO — vedi ADR-015.
 
 ### ADR-005: Model validation prima di architettura (Fase 0)
 
 **Contesto**: l'intera app dipende dalla capacità di un modello 3-4B di capire comandi in italiano e generare JSON strutturato.
 
-**Decisione**: dedicare la prima settimana interamente al testing dei modelli. Nessun codice Android scritto prima di avere dati concreti su accuratezza e performance.
+**Decisione**: dedicare la prima settimana interamente al testing dei modelli. Nessun codice Android scritto prima di avere dati concreti.
 
-**Motivazione**: se il modello non funziona, nessuna architettura ti salva. Meglio scoprirlo in 7 giorni che in 3 mesi.
+**Motivazione**: se il modello non funziona, nessuna architettura ti salva.
+
+**Stato**: confermata — e ripagata: il benchmark di Fase 0 è rimasto il gate di regressione di ogni cambio di prompt (ri-eseguito per V3 e V4 in Fase 4).
+
+### ADR-006: llama.rn come binding, non un bridge NDK in casa
+
+**Contesto**: ADR-001 sceglie llama.cpp; serve esporlo a React Native.
+
+**Decisione (Fase 1)**: usare llama.rn (binding RN mantenuto dalla community, JSI, streaming, saveSession/loadSession) invece di scrivere un modulo Kotlin+JNI proprio.
+
+**Motivazione**: centinaia di righe di JNI evitate, aggiornamenti llama.cpp gratis, API completion/embedding/session già pronte. Costo: si dipende dalle scelte di release di un terzo (accettato; versione pinnata).
+
+### ADR-007: Modello singolo — cascata FunctionGemma scartata
+
+**Contesto**: il design originale prevedeva un classificatore 270M davanti al modello 4B (§5).
+
+**Decisione (Fase 0, marzo 2026)**: un solo modello fa routing E generazione.
+
+**Motivazione**: Qwen3 4B da solo: 97.8% tool accuracy / 98.9% JSON su 100 prompt bilingui. La cascata avrebbe aggiunto ~0.2 GB RAM, un secondo punto di fallimento e latenza di orchestrazione per risolvere un problema che non esiste. I dati decidono.
+
+### ADR-008: Retrieval brute-force in TypeScript (supera ADR-003)
+
+**Contesto**: expo-sqlite non carica estensioni native → sqlite-vec impossibile senza abbandonare Expo o aggiungere un secondo driver SQLite.
+
+**Decisione (Fase 3)**: embedding come BLOB float32 in SQLite; cosine similarity brute-force in TS al momento della query; soglia di rilevanza 0.28.
+
+**Motivazione**: a scala telefono (migliaia di chunk) la scansione lineare costa millisecondi — irrilevante rispetto ai secondi dell'inferenza. Zero dipendenze native aggiunte, zero secondo database. Verificata su device (PDF reale, airplane mode). Se un giorno i corpora crescessero di ordini di grandezza, un indice ANN diventa un upgrade interno a `document-retriever.ts`.
+
+### ADR-009: Reminder via expo-notifications, non calendario
+
+**Contesto**: `set_reminder` era inizialmente un insert calendario.
+
+**Decisione (Fase 1)**: notifica locale schedulata (`expo-notifications`, trigger DATE, AlarmManager sotto il cofano).
+
+**Motivazione**: un reminder è una notifica, non un evento: niente permessi calendario per lo use case, funziona offline, e il risultato è onesto (la notifica È il reminder; un insert calendario non garantisce alcun avviso).
+
+### ADR-010: Re-scope Android-first — Mac Hub e iOS parcheggiati
+
+**Contesto**: la roadmap originale aveva Fase 4 = Mac Hub, Fase 5 = iOS.
+
+**Decisione (giugno 2026)**: fermare entrambi; la nuova Fase 4 è la performance on-device. Un solo device fatto bene batte tre piattaforme mediocri.
+
+**Motivazione**: il valore differenziante di Vesta è l'esperienza offline sul telefono; l'hub è un boost opzionale per definizione (principio 3), e iOS raddoppia la superficie nativa prima che il prodotto sia solido.
+
+### ADR-011: Prompt V4 — system prompt statico + contesto temporale per-turno
+
+**Contesto**: llama.rn riusa la KV cache sul prefisso comune (ADR-006); qualunque byte volatile nel system prompt invalida tutto ciò che segue. Il layout V2 metteva la data PRIMA dei tool schema (~17s di re-prefill a ogni cambio di minuto); il layout V3 (prefisso stabile + coda data) lasciava comunque la history dopo la coda volatile (re-prefill crescente 5→12s).
+
+**Decisione (Fase 4, PR #22)**: system prompt completamente statico; la data viaggia in una riga `[Contesto temporale: ...]` prepesa a OGNI messaggio utente, renderizzata dal `createdAt` salvato del messaggio (funzione pura → history byte-identica per sempre).
+
+**Motivazione (misurata)**: ogni turno diventa un puro append KV — turni warm piatti ~6s contro i ~67s del V2, anche con prompt più GRANDI (+90 token/turno di annotazioni). Nessuna regressione di accuratezza (Fase 0: 98.9%/100%). Due invarianti bloccate dai test: niente valori per-turno nel system prompt; history = funzione pura dei messaggi salvati.
+
+### ADR-012: Prefix session cache persistente (solo cold start)
+
+**Contesto**: la KV reuse in-memory muore al riavvio dell'app: il primo messaggio pagava ~37s di prefill del prefisso stabile.
+
+**Decisione (Fase 4, PR #20)**: salvare lo stato KV del prefisso su disco (`saveSession`) dopo il primo turno pulito e ripristinarlo (`loadSession`) subito dopo ogni load del modello, prima di qualsiasi completion.
+
+**Motivazione (misurata)**: primo messaggio 37.3s → 2.8s (13.4x). Costi accettati e mitigati: llama.cpp serializza lo stato KV COMPLETO (~215 MB) → un solo file, salvataggi debounced 120s e saltati a hash valido; chiave = hash(model + kv-type + prefisso) così ogni cambiamento invalida; contenuto ripristinato validato contro il testo del prefisso (un file avvelenato si auto-ripara con un cold start).
+
+### ADR-013: Estrazione memorie accodata alla conversazione
+
+**Contesto**: l'estrazione memorie girava come prompt standalone sul contesto condiviso → evicteva la KV cache della chat e il turno successivo ripagava ~17s di prefill.
+
+**Decisione (Fase 4, PR #18)**: l'estrazione appende `[assistant(risposta), user(istruzione)]` alla lista messaggi della chat — prefix-shared per costruzione, diventa un append economico. Guardie: skip se i token stimati sfiorerebbero il context shift; timeout disarmato appena la generate ritorna.
+
+### ADR-014: Perf settings opt-in, default OFF
+
+**Contesto**: q8_0 KV + flash attention dimezzano la RAM della KV cache, ma su inferenza CPU-only costano ~1.5x in velocità (misurato back-to-back a pari stato termico).
+
+**Decisione (Fase 4, PR #17)**: le tre leve (threads, KV quant, mlock) sono esposte in Settings con default OFF e un hint che dichiara il trade-off. Un cambio di settings invalida la session cache per design.
+
+**Motivazione**: il default deve essere il caso comune (velocità); la leva RAM serve a chi vuole contesti lunghi su device limitati — è una scelta informata dell'utente, non nostra.
+
+### ADR-015: Nessun auto-unload del modello (emenda ADR-004)
+
+**Contesto**: ADR-004 prevedeva lo scaricamento del modello dopo 5 minuti di inattività.
+
+**Decisione (implementazione Fase 1, confermata in Fase 4)**: il modello chat resta residente finché il Foreground Service vive. Solo il contesto di embedding viene rilasciato al background dell'app.
+
+**Motivazione**: lo scaricamento farebbe pagare a ogni ripresa il costo di load + re-prefill; la session cache (ADR-012) riduce il danno del cold start ma 2.8s ≠ 0. Il costo RAM del modello residente è il prezzo dichiarato del prodotto (catalogo RAM-aware). Restano aperti i comportamenti sotto memory pressure di sistema (l'OS può uccidere il processo; il servizio è START_STICKY e la session cache rende la ripartenza economica) — candidato Fase 5.
 
 ---
 
@@ -435,23 +488,22 @@ L'orchestrator ha un connection manager che:
 
 ### 8.1 Threat Model
 
-- **Nessun attacco di rete**: l'app non comunica con server esterni. Il Mac Hub è sulla rete locale.
-- **Accesso fisico al device**: le conversazioni e i documenti sono sul device. Se il device è compromesso, i dati sono esposti. Mitigazione: encryption at rest con la chiave di Android Keystore.
-- **Prompt injection via documenti**: un PDF malizioso potrebbe contenere testo che manipola il modello. Mitigazione: i chunk di documento vengono iniettati in un contesto separato con istruzioni chiare al modello di non eseguire azioni basate sul contenuto del documento.
-- **Azioni non autorizzate**: il modello potrebbe hallucinate un'azione non richiesta. Mitigazione: conferma esplicita per azioni distruttive (cancellare, inviare messaggi, chiamare).
+- **Nessun attacco di rete**: l'app non comunica con server esterni (l'unico traffico è il download modelli, avviato dall'utente).
+- **Accesso fisico al device**: conversazioni e documenti sono sul device, nel sandbox dell'app. Encryption at rest del database: **non implementata** (il DB vive nella private app dir; FDE/FBE di Android è la mitigazione corrente). Candidata per una fase futura.
+- **Prompt injection via documenti**: un PDF malizioso potrebbe contenere testo che manipola il modello. Mitigazione: i chunk sono iniettati come tool result con istruzione di rispondere SOLO sugli estratti; le azioni di sistema restano dietro il confirm gate.
+- **Azioni non autorizzate**: il modello potrebbe hallucinate un'azione non richiesta. Mitigazione: step di conferma esplicito nella UI prima di ogni azione; `make_call`/`send_sms` sono sempre confermati e comunque non partono da soli (ACTION_DIAL/ACTION_SENDTO aprono l'app di sistema — l'utente preme l'ultimo bottone).
 
 ### 8.2 Permessi Android
 
-Permessi richiesti e motivazione:
+Permessi effettivamente dichiarati (`apps/mobile/app.json`):
 
-| Permesso | Motivo | Obbligatorio |
-|---|---|---|
-| `SET_ALARM` | Impostare sveglie | Sì |
-| `READ_CALENDAR` / `WRITE_CALENDAR` | Leggere e creare eventi | Sì |
-| `READ_CONTACTS` | Cercare contatti per nome | Sì |
-| `CALL_PHONE` | Avviare chiamate | No (chiede Intent) |
-| `SEND_SMS` | Compilare SMS | No (chiede Intent) |
-| `READ_EXTERNAL_STORAGE` | Leggere PDF/documenti | Sì (per RAG) |
-| `FOREGROUND_SERVICE` | Tenere il modello in memoria | Sì |
-| `POST_NOTIFICATIONS` | Notifica Foreground Service | Sì |
-| `ACCESS_NETWORK_STATE` | Rilevare WiFi per Mac Hub | No (per Hub) |
+| Permesso | Motivo |
+|---|---|
+| `com.android.alarm.permission.SET_ALARM` | Sveglie e timer |
+| `READ_CALENDAR` / `WRITE_CALENDAR` | Leggere e creare eventi |
+| `READ_CONTACTS` | Cercare contatti per nome |
+| `POST_NOTIFICATIONS` | Reminder (notifiche locali) + notifica del Foreground Service |
+| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` | Tenere il modello in memoria |
+| `RECORD_AUDIO` | Input vocale dal widget (riconoscitore di sistema) |
+
+Permessi che il design originale prevedeva e che NON servono: `CALL_PHONE` e `SEND_SMS` (le azioni usano `ACTION_DIAL`/`ACTION_SENDTO`: aprono l'app di sistema precompilata, l'utente conferma lì); `READ_EXTERNAL_STORAGE` (documenti e modelli importati via Storage Access Framework); `ACCESS_NETWORK_STATE` (serviva al Mac Hub, parcheggiato).

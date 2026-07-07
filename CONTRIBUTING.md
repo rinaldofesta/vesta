@@ -152,9 +152,9 @@ Check [docs/GAMEPLAN.md](docs/GAMEPLAN.md) for what's in scope. The project foll
 
 Good areas for first contributions:
 - Bug fixes in existing features
-- Test coverage
+- Test coverage (especially regression tests for on-device bug classes — see Fase 5 in the gameplan)
 - Documentation improvements
-- Tool implementations (Fase 2)
+- New tools beyond the core 10
 - Translations (Tier 2 languages)
 
 ---

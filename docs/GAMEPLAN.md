@@ -25,7 +25,8 @@
 | **2 — Core Polish** | All 10 tools, query loop, history, settings, JSON retry | ✅ Done (2026-07-01) | 10/10 tools on device; calendar read returns real data |
 | **3 — Document Intelligence** | PDF/DOCX/TXT RAG, fully on device | ✅ Done (2026-07-01) | PDF question → grounded answer in airplane mode |
 | **4 — On-device Performance** | KV-cache prompt layout (V3 then V4), cold-start session cache, perf settings | ✅ Done (2026-07-06) | Warm turns: full re-prefill → pure appends (flat ~6s); cold start 13.4x; Fase 0 gate holds (98.9% / 100%) |
-| **5 — MCP + Advanced** | Local MCP server, tutor, swarm, offline knowledge | 📋 Future | Per-feature, defined when each starts |
+| **5 — Reliability & Release** | v0.2.0 signed release, failure-path hardening, low-memory story, regression tests, on-device diagnostics | 🔜 Next | Signed v0.2.0 installable from GitHub Releases; zero known silent-failure paths; every Fase 1–4 on-device bug class has a regression test |
+| **6 — MCP + Advanced** | Local MCP server, tutor, swarm, offline knowledge | 📋 Future | Per-feature, defined when each starts |
 | *Parked* | Mac Hub (LAN 70B delegation), iOS port | ⏸️ Parked | — |
 
 ---
@@ -115,7 +116,7 @@
 - Parsers: PDF (pdf-parse or pdfjs-dist via JS), DOCX (mammoth), TXT/MD (direct read)
 - Chunking: 512 tokens, 64 token overlap, respect paragraph boundaries
 - Embedding: `nomic-embed-text` via llama.cpp (same runtime, no new dependency)
-- Vector store: sqlite-vec compiled for Android, loaded as SQLite extension
+- Vector store: embeddings as float32 BLOBs in SQLite, brute-force cosine scan in TypeScript (sqlite-vec was the plan, but Expo SQLite can't load extensions — see Decision Log 2026-07-01)
 - New tool: `query_document` — embeds question, searches vectors, injects top-5 chunks in prompt
 - RAG prompt template: "Answer based ONLY on these excerpts: ..."
 
@@ -148,7 +149,7 @@
 
 **Remaining known limitations (accepted):** (a) when the 20-message history window slides, the dropped head changes the prompt prefix and that turn re-prefills the remaining history — bounded by the window size; (b) a device timezone change re-renders history time contexts from the next app launch (one cold start, then stable — the zone string is frozen per process); (c) a confirmed/declined pending action updates that assistant message's `[Tool: ...]` suffix, re-prefilling from that point once.
 
-**Exit gate:** Measurable prefill-latency reduction on repeated prompts on a real device, with no tool-accuracy regression (Fase 0 benchmark holds). **Measured 2026-07-04: warm turns 6.6x faster (prompt restructure), cold start 13.4x faster (persistent prefix cache); Fase 0 gate re-verified 2026-07-01 (98.9% tool / 100% JSON).** Cheap-wins settings shipped and device-verified 2026-07-04 (PR #17). **Fase 4 complete** (PRs #18, #19, #20, #17).
+**Exit gate:** Measurable prefill-latency reduction on repeated prompts on a real device, with no tool-accuracy regression (Fase 0 benchmark holds). **Measured 2026-07-04: warm turns 6.6x faster (prompt restructure), cold start 13.4x faster (persistent prefix cache); Fase 0 gate re-verified 2026-07-01 (98.9% tool / 100% JSON).** Cheap-wins settings shipped and device-verified 2026-07-04 (PR #17). **Fase 4 complete** (PRs #18, #19, #20, #17, #22).
 
 ---
 
@@ -162,7 +163,34 @@ Both remain on the long-term roadmap; neither is a current priority.
 
 ---
 
-## Fase 5: MCP + Advanced (future)
+## Fase 5: Reliability & Release
+
+**Goal:** Turn what shipped in Fase 1–4 into a solid, releasable platform. No new user-facing features — everything here is about trust: the app fails loudly, recovers cleanly, and installs from a signed release.
+
+**Why now:** everything since v0.1.0 (all of Fase 2, 3, 4) sits unreleased on main, two of the failure paths found in the code audit are silent, and the resident-model design has no story for OS memory pressure. Features can wait; reliability debt compounds.
+
+**What you build (each item has its own gate):**
+
+1. **v0.2.0 release** — finalize CHANGELOG, bump `app.json` version, tag, and add a release workflow (`.github/workflows/release.yml`) that builds a signed APK (keystore via repo secrets) and attaches it to the GitHub Release.
+   *Gate: a signed, installable APK downloadable from the GitHub Releases page.*
+2. **Silent-failure elimination** — persistence errors are currently `console.error`-only (chat-store save paths); surface them to the UI as a non-blocking banner, and audit every catch block in `lib/` for swallowed user-relevant failures.
+   *Gate: grep-verified — no catch path drops a user-relevant failure silently.*
+3. **Low-memory story** — the chat model is never released under memory pressure (no `onTrimMemory` handler exists); the OS just kills the process. Implement minimum viable handling (trim → release what's cheap to rebuild, e.g. embed context + pending session-cache work) and document the position: the process may die, START_STICKY restarts it, the prefix cache makes the restart ~3s.
+   *Gate: documented behavior + no crash under `adb shell am send-trim-memory` sweep.*
+4. **Regression tests for on-device bug classes** — every bug Fase 1–4 found on hardware gets a test that would have caught it: tool-param normalization (ISO-datetime-on-date-only), chat-store turn lifecycle (duplicate message), migration chain from empty DB → current, session-cache poisoned-file self-heal, download resume/corruption. CI already runs jest — extend the suite, no infra work.
+   *Gate: each named bug class has a test that fails on the pre-fix code.*
+5. **Accepted-limitations triage** — the three known re-prefill cases (20-message window slide, timezone change, [Tool:] suffix update) each get a decision: fix it or formally accept it with a Decision Log entry.
+   *Gate: none left undecided.*
+6. **On-device diagnostics screen** — dev-menu entry showing model info, last-turn n_past / prefill ms, DB size, session-cache state. The offline-first substitute for telemetry, and the tool that made Fase 4 debuggable — promoted from adb-only to in-app.
+   *Gate: screen shows live values on device.*
+
+**Out of scope (explicitly):** Play Store / F-Droid distribution (accounts + signing policy decisions — separate call), new tools, new languages, encryption at rest (candidate for a later phase, see ARCHITECTURE §8).
+
+**Exit gate:** v0.2.0 tagged and signed; zero known silent-failure paths; every Fase 1–4 on-device bug class covered by a regression test.
+
+---
+
+## Fase 6: MCP + Advanced (future)
 
 **MCP (Model Context Protocol) is the strategic play.**
 
@@ -178,7 +206,7 @@ This is a massive positioning upgrade: from "offline assistant" to "the local ag
 - Authentication: user approves which external agents can use Vesta (consent-based)
 - Use case: Claude Code asks Vesta to "check my calendar for tomorrow" → Vesta reads local calendar → returns data → Claude Code uses it in its workflow. All without the calendar data ever leaving the device.
 
-**Other Fase 5 candidates:**
+**Other Fase 6 candidates:**
 - Interactive tutor (study plans, quizzes, Socratic mode)
 - Multi-agent swarm (specialized agents collaborating)
 - Accessibility Service (Android, opt-in, sideload only — NOT for Play Store)
@@ -199,13 +227,14 @@ Track key decisions here as you make them during development.
 | 2026-03-08 | llama.cpp as sole runtime | Official Android binding, any GGUF, no recompilation. |
 | 2026-03-08 | React Native + minimal Kotlin | Developer is TS-native. Kotlin only for 3 native modules. |
 | 2026-03-08 | English + Italian from day 1 | Global product, Italian stress-test. Tier 2 langs at month 3-6. |
-| 2026-03-08 | MCP server in Fase 6 (now Fase 5) | Levie's "API-first for agents" thesis. Vesta as local agent infra. |
+| 2026-03-08 | MCP server as its own phase (now Fase 6) | Levie's "API-first for agents" thesis. Vesta as local agent infra. |
 | 2026-06-25 | Fase 1 complete | Android MVP exit gate met on real hardware: end-to-end alarm/event/reminder fully offline. |
 | 2026-06-25 | Fase 2 code-complete | All 10 tools (calls, SMS, contacts, calendar read) + query loop + error recovery shipped across PRs #11–#13, CI-verified (typecheck/lint/tests/Android build). On-device verification of the new contacts/calendar tools is pending a rebuild; the exit-gate scenario ("che appuntamenti ho domani?" reading real calendar data) has not yet been run on hardware. |
 | 2026-07-01 | Fase 2 complete (verified on device) | Rebuilt on a Pixel 10 Pro after fixing an autolinking gap (expo-contacts/expo-calendar were not compiled into the APK, crashing boot). Exit gate met on hardware, fully offline: "che appuntamenti ho domani?" reads real calendar data; timer, contact search, and confirm-gated calls also verified on device. Added the missing malformed-JSON retry-once-with-correction (GAMEPLAN Fase 2 error-handling requirement). |
 | 2026-07-01 | Fase 3 complete (verified on device) | On-device document RAG: `query_document` tool + a second llama.rn context running the Nomic embed model + brute-force cosine over BLOB-stored vectors (no sqlite-vec — Expo SQLite can't load extensions). Exit gate met on a Pixel 10 Pro, fully offline (airplane mode): imported a PDF, asked a factual question, got a grounded answer. PDF needed DOM polyfills (DOMException/DOMMatrix) to run pdfjs under Hermes. |
 | 2026-07-04 | Fase 4 complete (measured on device) | Stable-prefix prompt restructure (PR #18): warm turns 6.6x faster. Cold-start prefix session cache (PR #20): first message 37.3s → 2.8s (13.4x); llama.cpp serializes the FULL KV state so the file is ~215MB — saves debounced. Perf settings (PR #17): q8_0 KV + flash attention verified working; halves KV memory, ~1.5x slower on CPU — defaults off. |
 | 2026-07-06 | V4 per-turn date injection (PR #22) | Closes the deferred history-re-prefill limitation: fully static system prompt + [Contesto temporale: ...] line per user message, rendered from each message's createdAt — history replays byte-identically, every turn a pure KV append (warm turns flat ~6s vs V3's 5→12s growth). Also fixed a since-Fase-1 bug: the current user message reached the model twice. |
+| 2026-07-07 | Fase 5 = Reliability & Release; MCP moves to Fase 6 | Everything since v0.1.0 (Fase 2–4) is unreleased on main; a docs/code audit found silent persistence failures, no memory-pressure handling, and no release pipeline. Ship trust before features: signed v0.2.0, loud failures, regression tests for every on-device bug class. MCP keeps its scope, one slot later. Same audit realigned ARCHITECTURE/SPEC to the implemented reality (10 new ADRs: llama.rn, no cascade, no sqlite-vec, V4 prompt, session cache, perf defaults, no auto-unload). |
 
 ---
 

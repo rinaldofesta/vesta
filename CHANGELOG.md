@@ -7,6 +7,42 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+Fase 4 — On-device Performance makes Vesta dramatically faster on the phone,
+all measured on a Pixel 10 Pro with Qwen3 4B: warm turns went from a full
+prompt re-prefill (~67s) to flat ~6s pure KV-cache appends, and the first
+message after a cold app start went from 37.3s to 2.8s (13.4x).
+
+### Added — Fase 4
+
+- **KV-cache-friendly prompt architecture** (#18, #22) — the system prompt is
+  now fully static (persona, rules, tool schemas, memories, knowledge) and the
+  current date rides in a `[Time context: ...]` line prepended to each user
+  message, rendered from that message's stored timestamp. Conversation history
+  replays byte-identically, so every turn is a pure KV-cache append instead of
+  a re-prefill. No tool-accuracy regression (Fase 0 benchmark: 98.9% tool /
+  100% JSON).
+- **Cold-start prefix session cache** (#20) — the KV state of the stable
+  prompt prefix is saved to disk after the first clean turn and restored right
+  after model load, cutting the first message from 37.3s to 2.8s. Keyed by
+  model + settings + prefix text; any change invalidates it; a corrupted file
+  self-heals into a normal cold start. Saves are debounced (llama.cpp
+  serializes the full KV state, ~215 MB per file).
+- **Performance settings** (#17) — user-tunable CPU threads, KV-cache q8_0
+  quantization + flash attention (halves KV memory, ~1.5x slower on CPU), and
+  mlock. All default OFF; the Settings hint states the trade-off.
+- **Prefill benchmark dev command** (#20, #22) — `/benchmark-prefill` measures
+  the three prompt layouts back-to-back on device via `timings.promptMs`.
+
+### Fixed — Fase 4
+
+- **Duplicate user message** (#22) — since Fase 1, the current user message
+  reached the model twice (once in history, once appended). Fixed and locked
+  by a history-stability test suite.
+- **Memory extraction no longer evicts the chat KV cache** (#18) — it now
+  appends to the conversation (sharing the cached prefix) instead of running
+  as a standalone prompt, and its timeout can no longer cancel the user's next
+  generation.
+
 Fase 3 — Document Intelligence adds on-device RAG. Import a PDF, Word (.docx),
 text, or Markdown file; Vesta extracts and chunks the text, embeds it with a
 local Nomic model, and answers questions grounded in it via brute-force cosine
@@ -56,7 +92,7 @@ data, with calls/SMS gated behind explicit confirmation. See
 - **Bilingual** IT/EN coverage extended to all 10 tools' prompts and
   confirmation messages.
 
-## [0.1.0] — 2026-06-24
+## [0.1.0] — 2026-06-25
 
 First public release — Fase 1 Android MVP. The core loop works end-to-end on
 real hardware: load a model, chat, and trigger system actions fully offline.

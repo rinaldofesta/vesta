@@ -24,16 +24,19 @@ React Native App (TypeScript)
       └─ Conversation Manager (history, context)
           │
           ▼
-Native Bridge (Kotlin for Android / Swift for iOS)
-  ├─ LlamaCppModule — llama.cpp via NDK, OpenCL for Adreno GPU
+Native Layer (Kotlin for Android; iOS parked)
+  ├─ llama.rn — llama.cpp bindings (chat context + second embed context)
   ├─ SystemActionsModule — Android Intents (alarm, calendar, etc.)
-  └─ VestaService — Foreground Service, keeps model in RAM
+  └─ VestaService — Foreground Service (keep-alive notification only,
+     no auto-unload) + widget & voice activities
           │
           ▼
 Local Storage
-  ├─ SQLite (messages, config, memories)
-  ├─ sqlite-vec (document embeddings for RAG)
-  └─ .gguf model files
+  ├─ SQLite (messages, config, memories, models, documents,
+  │          chunks with embedding BLOBs — RAG is brute-force
+  │          cosine in TS; NO sqlite-vec, Expo can't load extensions)
+  ├─ .gguf model files
+  └─ session cache (prefix KV state, cold-start 13.4x)
 ```
 
 **Optional (parked):** Vesta Hearth (Mac Hub) — Node.js + Ollama + WebSocket on Mac, auto-discovered via mDNS on LAN. Delegates heavy queries to 70B model. Phone works 100% without it. Parked with the iOS port under the Android-first re-scope (see GAMEPLAN.md).
@@ -45,11 +48,11 @@ Local Storage
 | Component | Technology | Why |
 |---|---|---|
 | App | React Native + Expo | Cross-platform, TS-native developer |
-| LLM runtime | llama.cpp (NDK build) | Official Android binding, any GGUF model |
-| Native bridge | Kotlin (Android) | Only for: llama.cpp, Intents, Foreground Service |
+| LLM runtime | llama.cpp via llama.rn | Official RN binding, any GGUF model |
+| Native bridge | Kotlin (Android) | Only for: Intents, Foreground Service, widget/voice |
 | Orchestrator | TypeScript | Cross-platform, developer's strong language |
 | DB | SQLite (expo-sqlite) | Native, zero config |
-| Vector DB | sqlite-vec | 100KB, no dependencies |
+| Vector search | embedding BLOBs + TS cosine | Expo SQLite can't load extensions (no sqlite-vec) |
 | Embedding | llama.cpp (nomic-embed-text) | Same runtime as LLM |
 | Mac Hub | Node.js + Ollama + ws | Optional boost (parked) |
 
@@ -61,7 +64,7 @@ Local Storage
 |---|---|---|---|
 | Qwen3 4B (Q4_K_M) | Primary on phone | ~3 GB | ~15-25 tok/s |
 | Qwen3 8B (Q4_K_M) | Primary on tablet | ~5.5 GB | ~10-18 tok/s |
-| FunctionGemma 270M | Fast router (optional) | ~0.2 GB | ~100+ tok/s |
+| FunctionGemma 270M | Fast router — evaluated, NOT used (single model won, Fase 0) | ~0.2 GB | ~100+ tok/s |
 | nomic-embed-text | Embedding for RAG | ~0.3 GB | batch mode |
 | Llama 3.1 70B (Q6) | Mac Hub workhorse (parked) | ~55 GB | ~15-22 tok/s |
 
