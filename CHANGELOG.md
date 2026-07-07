@@ -25,6 +25,11 @@ reply that didn't reach SQLite vanished on the next restart with no signal.
 
 ### Added — Fase 5
 
+- **Regression tests for the last uncovered on-device bug classes** — the schema
+  migration runner (fresh DB reaches the latest version, migrations applied in
+  order, each atomic, idempotent on re-run) and the resumable downloader
+  (truncated files rejected, pause/resume tokens honored, a cancel race never
+  commits a partial). Brings the suite to 176 tests.
 - **Memory-pressure handling** — Android delivers low-memory warnings through
   native `onTrimMemory` (React Native's `AppState` `memoryWarning` event never
   fires on Android), so `SystemActionsModule` now hooks it and forwards real
