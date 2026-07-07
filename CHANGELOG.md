@@ -7,6 +7,27 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+Fase 5 — Reliability & Release begins with silent-failure elimination: a
+persistence write that failed used to only log to the console, so a message or
+reply that didn't reach SQLite vanished on the next restart with no signal.
+
+### Fixed — Fase 5
+
+- **Persistence failures are now surfaced** — every failed database write in the
+  chat flow (user message, assistant reply, pending confirmation, tool result)
+  raises a dismissible amber notice ("Couldn't save to storage — this message
+  may be lost if you restart") instead of only a `console.error`. The in-memory
+  turn is unaffected; the user just learns it may not survive a restart.
+- **Honest startup state** — when a selected model fails to load at boot (e.g. a
+  transient low-memory start), the chat now says "Couldn't load <model> — open
+  Models to retry" instead of showing the misleading "no model — tap to
+  download" banner for a model that is actually installed.
+
+### Added — Fase 5
+
+- **`NoticeBanner`** — a reusable, auto-dismissing amber banner for non-fatal
+  notices, distinct from the red fatal-error banner.
+
 Fase 4 — On-device Performance makes Vesta dramatically faster on the phone,
 all measured on a Pixel 10 Pro with Qwen3 4B: warm turns went from a full
 prompt re-prefill (~67s) to flat ~6s pure KV-cache appends, and the first

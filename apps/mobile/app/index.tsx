@@ -17,6 +17,7 @@ import { ChatBubble, StreamingBubble } from "../components/ChatBubble";
 import { ChatInput } from "../components/ChatInput";
 import type { ChatInputHandle } from "../components/ChatInput";
 import { FlameIndicator } from "../components/FlameIndicator";
+import { NoticeBanner } from "../components/NoticeBanner";
 import { colors, spacing, typography, radii } from "../lib/theme";
 import type { Message } from "../lib/orchestrator/types";
 
@@ -70,6 +71,8 @@ export default function ChatScreen() {
   const streamingText = useChatStore((s) => s.streamingText);
   const modelLoaded = useChatStore((s) => s.modelLoaded);
   const error = useChatStore((s) => s.error);
+  const notice = useChatStore((s) => s.notice);
+  const dismissNotice = useChatStore((s) => s.dismissNotice);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const stopGenerating = useChatStore((s) => s.stopGenerating);
   const conversationTitle = useChatStore((s) => s.conversationTitle);
@@ -196,6 +199,8 @@ export default function ChatScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
+
+      <NoticeBanner message={notice} onDismiss={dismissNotice} />
 
       <FlatList
         ref={flatListRef}
