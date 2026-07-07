@@ -25,6 +25,13 @@ reply that didn't reach SQLite vanished on the next restart with no signal.
 
 ### Added — Fase 5
 
+- **Memory-pressure handling** — Android delivers low-memory warnings through
+  native `onTrimMemory` (React Native's `AppState` `memoryWarning` event never
+  fires on Android), so `SystemActionsModule` now hooks it and forwards real
+  pressure to JS, which releases the embedding context (~1s to reload). The chat
+  model stays resident by design; if the OS still reclaims the process, the
+  foreground service restarts it and the prefix session cache keeps the cold
+  start cheap.
 - **`NoticeBanner`** — a reusable, auto-dismissing amber banner for non-fatal
   notices, distinct from the red fatal-error banner.
 

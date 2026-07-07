@@ -480,7 +480,15 @@ Hub connesso → delega dei task pesanti al modello 70B; Hub assente → tutto l
 
 **Decisione (implementazione Fase 1, confermata in Fase 4)**: il modello chat resta residente finché il Foreground Service vive. Solo il contesto di embedding viene rilasciato al background dell'app.
 
-**Motivazione**: lo scaricamento farebbe pagare a ogni ripresa il costo di load + re-prefill; la session cache (ADR-012) riduce il danno del cold start ma 2.8s ≠ 0. Il costo RAM del modello residente è il prezzo dichiarato del prodotto (catalogo RAM-aware). Restano aperti i comportamenti sotto memory pressure di sistema (l'OS può uccidere il processo; il servizio è START_STICKY e la session cache rende la ripartenza economica) — candidato Fase 5.
+**Motivazione**: lo scaricamento farebbe pagare a ogni ripresa il costo di load + re-prefill; la session cache (ADR-012) riduce il danno del cold start ma 2.8s ≠ 0. Il costo RAM del modello residente è il prezzo dichiarato del prodotto (catalogo RAM-aware). Il comportamento sotto memory pressure di sistema è ora gestito da ADR-016.
+
+### ADR-016: Memory pressure — rilascia solo il contesto embedding, tieni il modello chat
+
+**Contesto (Fase 5)**: ADR-015 tiene il modello chat residente, ma non gestiva la memory pressure di sistema. Su Android RN 0.83 l'evento `memoryWarning` di AppState NON scatta (l'`AppStateModule` lo emette solo su iOS): serve un hook nativo.
+
+**Decisione**: `SystemActionsModule` registra un `ComponentCallbacks2` e su `onTrimMemory(level ≥ TRIM_MEMORY_RUNNING_LOW)` emette un device event `memoryWarning` a JS (guardato da `hasActiveReactInstance()`, come l'`AppStateModule` di RN). Il layout JS rilascia SOLO il contesto di embedding (`unloadEmbeddingModel`, idempotente, ~1s a ricaricare); il modello chat resta residente.
+
+**Motivazione**: l'embedding è l'unica risorsa davvero cheap-to-rebuild. Il modello chat vale il costo di tenerlo; se la pressione è tale che l'OS ci uccide comunque, il Foreground Service è START_STICKY e la prefix session cache (ADR-012) rende la ripartenza ~3s. La session cache su disco NON va toccata sotto pressione: non ha lavoro pendente cancellabile (il debounce è un gate su `Date.now()`, non un timer) e cancellarla eliminerebbe proprio ciò che rende economico il restart.
 
 ---
 

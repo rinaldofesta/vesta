@@ -1,8 +1,10 @@
 package com.cosmico.vesta
 
 import android.app.ActivityManager
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.provider.AlarmClock
 import android.provider.CalendarContract
@@ -13,9 +15,63 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeParseException
 
 class SystemActionsModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext) {
+    ReactContextBaseJavaModule(reactContext), ComponentCallbacks2 {
 
     override fun getName(): String = "SystemActionsModule"
+
+    // ── Memory-pressure bridge ───────────────────────────────────────────
+    // Android signals low memory through ComponentCallbacks2.onTrimMemory, NOT
+    // through React Native's AppState: its `memoryWarning` event is emitted only
+    // on iOS (AppStateModule never fires it on Android). We register on the
+    // application context and forward a device event to JS, which drops the
+    // cheap-to-rebuild embedding context. The chat model stays resident by
+    // design — if the OS still kills us, the foreground service is START_STICKY
+    // and the prefix session cache makes the restart cheap (~3s). See ADR-016.
+
+    override fun initialize() {
+        super.initialize()
+        reactApplicationContext.applicationContext.registerComponentCallbacks(this)
+    }
+
+    override fun invalidate() {
+        reactApplicationContext.applicationContext.unregisterComponentCallbacks(this)
+        super.invalidate()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        // Forward only real pressure. RUNNING_LOW/CRITICAL mean "free non-critical
+        // memory now" while foregrounded; UI_HIDDEN and the background levels are
+        // all >= this and also worth reclaiming the embed context for. Below
+        // RUNNING_LOW (RUNNING_MODERATE) Android is merely informational.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            emitMemoryWarning(level)
+        }
+    }
+
+    // Legacy pre-API-34 path; some devices still call this on severe pressure.
+    override fun onLowMemory() {
+        emitMemoryWarning(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // No config-driven behavior here; required by ComponentCallbacks.
+    }
+
+    private fun emitMemoryWarning(level: Int) {
+        // A trim can arrive while the app is backgrounded and the instance is
+        // being torn down — guard exactly as RN's own AppStateModule does.
+        if (!reactApplicationContext.hasActiveReactInstance()) return
+        reactApplicationContext.emitDeviceEvent("memoryWarning", level)
+    }
+
+    // Required so the JS-side NativeEventEmitter(SystemActionsModule) doesn't
+    // warn about a missing listener interface. No bookkeeping needed — the
+    // native trim callback fires regardless of JS subscriber count.
+    @ReactMethod
+    fun addListener(eventName: String) {}
+
+    @ReactMethod
+    fun removeListeners(count: Int) {}
 
     // Device capabilities — used by the model manager to recommend models that
     // actually fit this phone's RAM (e.g. a 16 GB Pixel runs every catalog model;
