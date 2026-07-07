@@ -7,6 +7,11 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-07
+
+Fase 5 — Reliability & Release, plus the on-device performance work from Fase 4.
+Signed APKs are now published to GitHub Releases.
+
 Fase 5 — Reliability & Release begins with silent-failure elimination: a
 persistence write that failed used to only log to the console, so a message or
 reply that didn't reach SQLite vanished on the next restart with no signal.
