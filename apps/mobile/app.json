@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vesta",
     "slug": "vesta",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/brand/vesta-app-icon-1024x1024.png",
     "userInterfaceStyle": "light",
@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "com.cosmico.vesta",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#F8F5F1",
         "foregroundImage": "./assets/brand/vesta-flame-logo-1024x1024.png"
@@ -34,7 +35,8 @@
       "expo-router",
       "expo-notifications",
       "llama.rn",
-      "./plugins/with-system-actions"
+      "./plugins/with-system-actions",
+      "./plugins/with-android-signing"
     ],
     "ios": {
       "bundleIdentifier": "com.cosmico.vesta"
