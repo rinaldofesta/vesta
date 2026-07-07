@@ -65,15 +65,19 @@ stays a **dumb transport + auth gate**, and TypeScript remains the brain.
 │ TYPESCRIPT — MCP engine (lib/mcp/)                            │
 │  • JSON-RPC 2.0 parse/dispatch                                │
 │  • initialize handshake, tools/list, tools/call              │
-│  • tools/list ← tool-registry (mcpExposed filter)            │
+│  • tools/list ← tool-registry (returnsData filter)           │
 │  • tools/call → tool-dispatcher DATA-fetch path (no re-gen)   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-The token match is done natively (cheap 401 for bad tokens without waking JS),
-but the pairing store's source of truth is SQLite; native reads the active token
-set (refreshed on change) to gate requests. The JS engine also receives the
-token so it can stamp last-seen and enforce per-client scoping if needed.
+The token match is done natively (cheap 401 for bad tokens without waking JS)
+against an **in-memory** set of active tokens. TypeScript owns the pairing store
+(SQLite) and pushes the active token set into native memory on startup and on any
+change (`setActiveTokens`); **native never opens the database** — it only ever
+consults that in-memory set. This keeps native a dumb pipe and avoids coupling
+Kotlin to a schema the TS migration system owns (a future migration renaming a
+column can't silently break the 401 path). The JS engine also receives the token
+per request so the pairing store can stamp last-seen.
 
 ### Key semantic decision: Vesta returns *data*, not answers
 
@@ -84,29 +88,34 @@ re-generation that Vesta uses in-app to turn tool data into a spoken answer).
 
 Important precision: *skip generation, not all inference.*
 - `get_calendar_events`, `search_contacts` → pure data fetches, **zero inference**.
-- `query_document` (next tool, see below) → returns **ranked passages** via the
-  existing embedding pass. That's **retrieval, not generation** — the embedding
-  step stays; only the answer-writing step is dropped.
+- `query_document` → returns **ranked passages** via the existing embedding pass.
+  That's **retrieval, not generation** — the embedding step stays; only the
+  answer-writing step is dropped. The generative query-loop lives entirely in the
+  orchestrator (`orchestrator.ts`), not the dispatcher, so this tool needs **no
+  new routing** — `tools/call` returns the retriever's ranked passages directly.
 
 ## Tools exposed
 
-Selection is driven by a new **`mcpExposed: boolean`** field on `ToolDefinition`
-in `lib/tools/tool-registry.ts` — the registry stays the single source of truth,
-no hardcoded name list in the MCP layer. The existing `category` /
-`confirmRequired` fields don't cleanly separate "exposable data fetch" from
-"action", which is why an explicit flag is added.
+Selection reuses the registry's **existing** `returnsData: boolean` field and its
+`toolReturnsData()` helper (`lib/tools/tool-registry.ts`) — the same predicate the
+orchestrator already uses to decide whether a tool's result must be fed back to
+the model. `returnsData: true` *is* the "read-only data source" set, so no new
+flag is added: a second boolean would only drift (a `returnsData` tool that isn't
+exposable, or an action tool exposed as data, are both incoherent). A thin
+`isReadOnlyDataSource(name)` alias over `toolReturnsData` can be added for
+readability, but the registry stays the single source of truth with no parallel
+column and no "the two flags agree" test.
 
-**MVP core (this slice):**
-- `get_calendar_events` — reads the device calendar (already native via
-  ContentResolver). Zero inference.
-- `search_contacts` — reads contacts by query (already native). Zero inference.
-
-**Designed-in next tool (flag flip once the two above are validated):**
+The three `returnsData: true` tools — all shipped in this slice:
+- `get_calendar_events` — reads the device calendar (native via ContentResolver).
+  Zero inference.
+- `search_contacts` — reads contacts by query (native). Zero inference.
 - `query_document` — returns the top-ranked document passages for a query via the
   existing embedding + brute-force-cosine retrieval (`document-retriever`),
-  bypassing the grounded re-generation. Retrieval-only. Already built (Fase 3);
-  needs only `mcpExposed: true` + a data-only return path. Kept out of the very
-  first slice to validate the two zero-inference tools first; trivially added.
+  **bypassing the grounded re-generation**. Retrieval-only (the embedding pass
+  stays; only answer-writing is skipped). This is the headline privacy use case —
+  "Claude grounds an answer in documents that never left my phone" — and is the
+  reason to include it now, not defer it.
 
 Each exposed tool maps to an MCP tool definition: `name`, `description` (English),
 and `inputSchema` = the tool's existing JSON-Schema `parameters` (already in that
@@ -127,12 +136,15 @@ shape). `tools/call` validates arguments against the same schema before dispatch
 4. **`lib/mcp/mcp-server.ts`** — the MCP protocol engine: JSON-RPC 2.0 dispatch,
    `initialize`, `tools/list`, `tools/call`; subscribes to `mcpRequest`, replies
    via `respondMcp`.
-5. **`lib/mcp/mcp-tools.ts`** — builds MCP tool defs from the `mcpExposed` registry
+5. **`lib/mcp/mcp-tools.ts`** — builds MCP tool defs from the `returnsData` registry
    entries; routes `tools/call` to the dispatcher's data-fetch, returning raw
-   structured results (no re-generation).
-6. **`lib/mcp/pairing-store.ts`** — per-client named tokens (create, list with
-   last-seen, revoke). Persisted via a new SQLite migration (`mcp_clients` table:
-   id, name, token, created_at, last_seen). Pushes the active token set to native.
+   structured results (no re-generation); calls `pairingStore.touch(token)` so the
+   store (not this module) owns the last-seen write.
+6. **`lib/mcp/pairing-store.ts`** — the single owner of per-client tokens: create,
+   list with last-seen, `touch(token)`, revoke. Persisted via a new SQLite
+   migration (`mcp_clients` table: id, name, token, created_at, last_seen). On any
+   change (and at startup) pushes the active token set into native via
+   `setActiveTokens`. Native never reads this table.
 7. **`lib/native/mcp-server.ts`** — thin TS wrapper over `McpServerModule`.
 8. **`app/mcp.tsx`** + a Settings entry — toggle the server (OFF by default), show
    the URL, add a named client (generates a token to copy), list clients with
@@ -146,8 +158,8 @@ shape). `tools/call` validates arguments against the same schema before dispatch
 3. Valid → generate `id`, emit `mcpRequest{id, token, body}`, block on
    `futures[id]`.
 4. `mcp-server.ts` parses JSON-RPC, routes `tools/call` → `mcp-tools.ts` →
-   `dispatchToolCall` (data-fetch path) → structured result; stamps the client's
-   last-seen.
+   `dispatchToolCall` (data-fetch path) → structured result; `mcp-tools.ts` calls
+   `pairingStore.touch(token)`, which writes last-seen (single owner).
 5. `mcp-server.ts` calls `respondMcp(id, 200, jsonRpcResult)`.
 6. Native completes `futures[id]`, unblocks the HTTP thread, writes the response.
 
@@ -169,8 +181,10 @@ shape). `tools/call` validates arguments against the same schema before dispatch
   revoked token → 401 before any data is read.
 - Server binds `0.0.0.0:<port>` only while enabled; the notification makes an
   active server visible. Bind-to-a-specific-WiFi-interface is deliberately avoided
-  (interface IPs churn on reconnect); Settings shows the current LAN IP and the
-  server restarts on meaningful network changes.
+  (interface IPs churn on reconnect); Settings shows the current LAN IP. The server
+  restarts on network changes via a `ConnectivityManager.NetworkCallback`
+  (`onAvailable`/`onLost`) registered while enabled — so "unreachable after a WiFi
+  reconnect" is handled explicitly, not hand-waved.
 - No arguments from the wire reach a shell or SQL string; tool args are validated
   against each tool's JSON-Schema before dispatch.
 
@@ -193,22 +207,29 @@ shape). `tools/call` validates arguments against the same schema before dispatch
 
 ## Testing
 
-- **TS unit tests** (jest): `tools/list` shape derived from the `mcpExposed`
-  registry entries; `tools/call` routes to the dispatcher and returns data-only
-  (no re-generation); JSON-RPC error cases (unknown method, bad params, malformed
-  body → proper JSON-RPC error, never a throw); pairing-store issue/list/revoke and
-  the active-token-set push; unknown-token rejection logic.
+- **TS unit tests** (jest): `tools/list` shape derived from the `returnsData`
+  registry entries (exactly the three read tools); `tools/call` routes to the
+  dispatcher and returns data-only (no re-generation); JSON-RPC error cases
+  (unknown method, bad params, malformed body → proper JSON-RPC error, never a
+  throw); pairing-store issue/list/`touch`/revoke and the active-token-set push;
+  unknown-token rejection logic.
 - **On-device**: from the laptop,
   `claude mcp add --transport http vesta http://<phone-ip>:<port>/mcp --header "Authorization: Bearer <token>"`;
-  verify `tools/list` returns the exposed tools, call each read tool and confirm
-  real device data comes back, then revoke the client and confirm the next call
+  verify `tools/list` returns the three tools, call each (`get_calendar_events`,
+  `search_contacts`, `query_document`) and confirm real device data / ranked
+  document passages come back, then revoke the client and confirm the next call
   401s. (Native HTTP + protocol correctness aren't exercised by CI's debug build,
-  so this on-device check is the gate — same pattern as prior Fase device checks.)
+  so this on-device check is the gate — same pattern as prior Fase device checks.
+  Running it once for all three tools, not twice, is why query_document ships in
+  this slice.)
 
-## Open decision for review
+## Resolved decisions (from design review)
 
-- **query_document in the MVP or as the immediate follow-on?** The spec puts the
-  two zero-inference tools in the first slice and query_document one flag-flip
-  later. If you'd rather ship all three at once (it's the strongest privacy use
-  case and is already built), we pull it into the MVP — the only extra work is the
-  data-only return path for the retriever.
+- **All three read tools ship in this slice** (not two + a deferred flag flip):
+  the data-only path is identical for all three, the expensive on-device gate runs
+  once instead of twice, and `query_document` is the headline privacy use case.
+- **No new `mcpExposed` flag** — reuse the registry's existing `returnsData`
+  predicate, which already identifies exactly the exposable set.
+- **Token store**: TypeScript owns SQLite and pushes the active token set into
+  native memory; native never touches the DB.
+- **Consent**: token-issuance-only; no first-connect approval.
