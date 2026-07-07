@@ -91,6 +91,22 @@ let kvStateDirty = false;
 // file deterministically instead of failing the load at the llama.cpp layer.
 let currentKvCacheType = "f16";
 
+// Stats from the most recent completion, for the diagnostics screen. promptMs +
+// promptTokens are the JS-visible proxy for prefill work: a warm KV append
+// evaluates only the new tokens (small), a cold turn re-prefills the whole
+// prompt (large). null until the first completion of this process.
+export interface LastCompletionStats {
+  promptMs: number;
+  promptTokens: number; // tokens_evaluated — the prefill this turn
+  predictedTokens: number;
+  predictedPerSecond: number;
+}
+let lastCompletion: LastCompletionStats | null = null;
+
+export function getLastCompletion(): LastCompletionStats | null {
+  return lastCompletion;
+}
+
 // Rough token estimate (~3 chars/token is conservative for Italian/English
 // BPE) plus per-message chat-template overhead. Used to decide whether
 // context-window-sensitive background work (memory extraction, session-cache
@@ -243,6 +259,13 @@ export function generate(
     // Use raw `text` so <think> blocks are preserved for UI rendering.
     // The orchestrator / response-parser strips them when needed for tool parsing.
     const text = result.text;
+
+    lastCompletion = {
+      promptMs: result.timings.prompt_ms,
+      promptTokens: result.tokens_evaluated,
+      predictedTokens: result.tokens_predicted,
+      predictedPerSecond: result.timings.predicted_per_second,
+    };
 
     return {
       text,

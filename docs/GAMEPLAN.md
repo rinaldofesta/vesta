@@ -181,8 +181,8 @@ Both remain on the long-term roadmap; neither is a current priority.
    *Gate: each named bug class has a test that fails on the pre-fix code. Met.*
 5. **Accepted-limitations triage** — DONE. The three known re-prefill cases each got a decision (Decision Log 2026-07-07): the 20-message window slide was FIXED (anchored window, `historyWindowStart`); the timezone-change re-render and the `[Tool:]` suffix update were formally ACCEPTED (both rare and bounded).
    *Gate: none left undecided. Met.*
-6. **On-device diagnostics screen** — dev-menu entry showing model info, last-turn n_past / prefill ms, DB size, session-cache state. The offline-first substitute for telemetry, and the tool that made Fase 4 debuggable — promoted from adb-only to in-app.
-   *Gate: screen shows live values on device.*
+6. **On-device diagnostics screen** — BUILT (`app/diagnostics.tsx`, reachable from Settings). Shows model (name, file, context size, KV-cache type), last-turn prefill ms + prompt tokens evaluated (the JS-visible proxy for KV reuse — `n_past` isn't exposed to JS, but `tokens_evaluated` is the prefill work done this turn), and storage (database size, prefix-cache size / token count / primed). The offline-first substitute for telemetry, promoted from adb-only to in-app.
+   *Gate: screen shows live values on device — on-device visual check pending a rebuild (typecheck/lint/tests green; JS isn't bundled by CI's debug build).*
 
 **Out of scope (explicitly):** Play Store / F-Droid distribution (accounts + signing policy decisions — separate call), new tools, new languages, encryption at rest (candidate for a later phase, see ARCHITECTURE §8).
 
