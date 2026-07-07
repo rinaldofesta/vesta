@@ -19,7 +19,7 @@
   <a href="#"><img src="https://img.shields.io/badge/language-TypeScript-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/offline-first-C07A56.svg" alt="Offline First" /></a>
   <a href="#"><img src="https://img.shields.io/badge/LLM-on--device-8B5CF6.svg" alt="On-device LLM" /></a>
-  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(Fase%204)-orange.svg" alt="Early / Fase 4" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(pre--0.2)-orange.svg" alt="Early / pre-0.2" /></a>
 </p>
 
 ---
@@ -63,6 +63,7 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 | 📥 **In-app model manager** | Browse a curated, RAM-aware catalog, download with progress/resume, add any HuggingFace GGUF repo, or import a local `.gguf`. Switch or delete anytime. |
 | ⏰ **System actions** | All 10 core tools via native Android intents — alarms, calendar events & read, reminders, timers, navigation, calls, SMS, and contacts search — with a confirmation step before any destructive action. |
 | 💬 **Real conversation** | A genuine chat assistant, not just a command parser. Ask, discuss, draft. |
+| 📄 **Document RAG** | Import a PDF, Word, text, or Markdown file and ask questions answered from its contents — on-device embeddings, fully offline. |
 | 🪪 **Conversation memory** | Personal facts are extracted and stored locally, then injected into future prompts for continuity. |
 | 📄 **Knowledge files** | Import `.md` / `.txt` files as portable, always-offline personal context. |
 | 🕘 **Conversation history** | Full persistence with SQLite — browse, switch, and delete past chats. |
@@ -73,7 +74,7 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 
 ## Status
 
-Vesta is **early and under active development** (Fase 3 — Document Intelligence complete; Fase 4 — On-device Performance in progress). All 10 core tools, multi-turn memory, conversation history, and an in-app model manager are in place. The core is verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, and contact search run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Fase 3 — Document Intelligence adds on-device RAG: import a PDF, Word, text, or Markdown file and ask questions answered from its contents, fully offline — verified on a Pixel 10 Pro, PDF included. Fase 4 now targets faster time-to-first-token via KV-cache-friendly prompt structure and tunable perf settings. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
+Vesta is **early and under active development** (Fase 4 — On-device Performance complete; next up: Reliability & Release). All 10 core tools, multi-turn memory, conversation history, document RAG, and an in-app model manager are in place and verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, contact search, and PDF question-answering run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Fase 4 made it fast: a KV-cache-friendly prompt architecture turns warm turns into pure appends (flat ~6s instead of ~67s full re-prefills) and a persistent prefix cache cuts the first message after a cold start from 37.3s to 2.8s (13.4x) — all measured on device. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
@@ -211,7 +212,8 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 | **Fase 2** — Core Polish | ✅ Done | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, malformed-JSON retry — verified on a Pixel 10 Pro, fully offline |
 | **Fase 3** — Document Intelligence | ✅ Done | Import PDF / Word / text / Markdown, on-device embeddings (Nomic) + brute-force cosine retrieval, `query_document` — grounded offline answers, verified on a Pixel 10 Pro |
 | **Fase 4** — On-device Performance | ✅ Done | KV-cache prompt layout (static system prompt + per-turn date context): warm turns are pure appends; cold-start prefix cache (first message 13.4x faster); tunable threads / KV-quant / mlock — all measured on a Pixel 10 Pro |
-| **Fase 5** — MCP + Advanced | 📋 Future | Expose tools as a local MCP server for other agents, accessibility |
+| **Fase 5** — Reliability & Release | 🔜 Next | v0.2.0 signed release, failure-path hardening, low-memory handling, regression tests for every on-device bug class, on-device diagnostics |
+| **Fase 6** — MCP + Advanced | 📋 Future | Expose tools as a local MCP server for other agents, accessibility |
 | _Parked_ — Mac Hub & iOS | ⏸️ Parked | Android-first focus; LAN 70B hub and MLX-Swift iOS port deferred |
 
 Full plan with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md).

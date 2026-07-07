@@ -193,8 +193,8 @@ Implementation: Qwen3 4B already supports 100+ languages natively. No model chan
 | Rischio | Probabilità | Impatto | Mitigazione |
 |---|---|---|---|
 | Modelli 3-4B insufficienti per function calling in italiano | Media | Critico | Fase 0 dedicata interamente al testing. Fallback: fine-tuning su dataset italiano. |
-| Performance inaccettabili su device mid-range | Media | Alto | Strategia a cascata (FunctionGemma 270M per routing, modello 4B solo quando serve). |
-| Battery drain eccessivo | Media | Alto | Model offloading dopo inattività. Ottimizzazione KV cache (q4_0). Benchmark continui. |
+| Performance inaccettabili su device mid-range | Media | Alto | Catalogo RAM-aware (1.7B per device low-RAM). Prompt architecture KV-cache-friendly (Fase 4: turni warm = puri append). La cascata FunctionGemma è stata valutata e scartata in Fase 0 — il modello singolo basta (97.8% tool accuracy). |
+| Battery drain eccessivo | Media | Alto | Nessuna inferenza in background (il modello lavora solo su richiesta). KV cache q8_0 + flash attention disponibili in Settings (opt-in). Benchmark continui. |
 | Frammentazione Android (GPU Mali vs Adreno) | Alta | Medio | CPU-only come fallback universale. GPU acceleration solo su device verificati. |
 | Apple blocca la distribuzione iOS | Bassa | Alto | Primo rilascio solo Android. iOS via TestFlight e sideloading. Compliance App Store Review Guidelines. |
 | Modello genera azioni non richieste (hallucination) | Media | Critico | Conferma esplicita per azioni distruttive (cancellare eventi, inviare messaggi). Tool schema stretto. |
@@ -233,7 +233,7 @@ FASE 2  [Done 2026-07-01]   Core Polish
 FASE 3  [Done 2026-07-01]   Document Intelligence (RAG)
   ├─ PDF/DOCX/TXT parser
   ├─ Chunking + embedding via llama.cpp (nomic-embed-text)
-  ├─ sqlite-vec for vector search
+  ├─ Brute-force cosine retrieval in TS (no sqlite-vec — Expo limitation)
   ├─ query_document tool
   └─ EXIT GATE: Upload a 20-page PDF, ask a specific question,
                 get a correct answer with source reference. Offline.
@@ -249,7 +249,17 @@ FASE 4  [Done 2026-07-06]   On-device Performance
                 flat ~6s appends; cold start 37.3s → 2.8s (13.4x);
                 Fase 0 benchmark holds (98.9% tool / 100% JSON).
 
-FASE 5  [Future]        MCP + Advanced
+FASE 5  [Next]          Reliability & Release
+  ├─ v0.2.0: signed APK via GitHub Releases (everything since v0.1.0 ships)
+  ├─ Silent-failure elimination (persistence errors surfaced to UI)
+  ├─ Low-memory story for the resident model (onTrimMemory handling)
+  ├─ Regression tests for every Fase 1-4 on-device bug class
+  ├─ Accepted-limitations triage (fix or formally accept, each logged)
+  ├─ On-device diagnostics screen (offline-first substitute for telemetry)
+  └─ EXIT GATE: signed v0.2.0 installable from GitHub Releases; zero known
+                silent-failure paths; on-device bug classes test-covered.
+
+FASE 6  [Future]        MCP + Advanced
   ├─ MCP Server: expose Vesta tools as MCP endpoints (local agent infra)
   ├─ Study plans + interactive tutor
   ├─ Multi-agent swarm
