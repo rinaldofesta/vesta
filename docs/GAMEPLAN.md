@@ -171,8 +171,8 @@ Both remain on the long-term roadmap; neither is a current priority.
 
 **What you build (each item has its own gate):**
 
-1. **v0.2.0 release** — finalize CHANGELOG, bump `app.json` version, tag, and add a release workflow (`.github/workflows/release.yml`) that builds a signed APK (keystore via repo secrets) and attaches it to the GitHub Release.
-   *Gate: a signed, installable APK downloadable from the GitHub Releases page.*
+1. **v0.2.0 release** — workflow DRAFTED, awaiting the owner's one-time keystore setup. `.github/workflows/release.yml` (tag-triggered) builds `assembleRelease` signed via the `with-android-signing` config plugin (release build type uses the upload keystore when the `VESTA_UPLOAD_*` Gradle props are set, else debug — so normal builds are unaffected) and attaches the APK to the GitHub Release. `app.json` bumped to 0.2.0 + `versionCode` 2. Remaining (owner-only, see `docs/RELEASING.md`): generate the keystore + set the 4 secrets, then push a `v0.2.0` tag.
+   *Gate: a signed, installable APK downloadable from the GitHub Releases page — blocked on the keystore/secrets.*
 2. **Silent-failure elimination** — persistence errors are currently `console.error`-only (chat-store save paths); surface them to the UI as a non-blocking banner, and audit every catch block in `lib/` for swallowed user-relevant failures.
    *Gate: grep-verified — no catch path drops a user-relevant failure silently.*
 3. **Low-memory story** — DONE (native handler shipped). RN's AppState `memoryWarning` never fires on Android (RN 0.83), so `SystemActionsModule` hooks native `onTrimMemory` and forwards real pressure to JS, which releases the embedding context (the only cheap-to-rebuild resource); the chat model stays resident by design (ADR-016). The session cache is deliberately left alone: it has no cancellable pending work (its debounce is a `Date.now()` gate, not a timer), and clearing it would delete the cache that makes the START_STICKY restart cheap (~3s). Documented position: the OS may still kill us, the foreground service restarts, the prefix cache absorbs the cold start.
