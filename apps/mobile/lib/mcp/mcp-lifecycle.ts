@@ -1,5 +1,8 @@
-// Enable/disable the MCP server: token push → listener → native start, persisted
-// so it can be restored on launch. Server is OFF by default.
+// Enable/disable the MCP server: token push → listener → native start. The
+// on/off flag is persisted; the running server is restored when the MCP settings
+// screen is opened (app/mcp.tsx re-enables it if the flag is set), not at app
+// launch. Server is OFF by default. Boot-time auto-restore is a documented
+// follow-up (slice 1 assumes Vesta is foregrounded during MCP use).
 
 import {
   startMcpServer,
