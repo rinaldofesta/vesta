@@ -7,6 +7,32 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
+Fase 6 — MCP + Advanced begins with a local MCP server: expose Vesta's on-device
+tools to an agent on your laptop (Claude Code / Desktop) over your Wi-Fi, with the
+private data never leaving the phone.
+
+### Added — Fase 6
+
+- **Local MCP server (slice 1)** — a Model Context Protocol server that a laptop
+  agent can call over the LAN. It exposes exactly the three read-only tools
+  (`get_calendar_events`, `search_contacts`, `query_document`) and returns their
+  structured data, not a generated answer: over MCP the host agent does the
+  reasoning, so Vesta skips the orchestrator's generation loop and hands back the
+  raw tool result (for `query_document`, the retrieved passages). Off by default;
+  enabled from a new **Settings → MCP Server** screen.
+- **Per-client bearer tokens** — pairing is token-issuance-only: mint a named
+  client to get a copy-paste `claude mcp add --transport http … --header
+  "Authorization: Bearer …"` command, revoke it to cut access instantly. Tokens
+  are owned in SQLite by the TypeScript layer (migration v3, `mcp_clients`) and
+  pushed into the native server's in-memory set — the native HTTP layer never
+  opens the database.
+- **Minimal native transport** — a NanoHTTPD server in the Android layer
+  (`POST /mcp`, JSON-RPC 2.0, no SSE) is a dumb transport + auth gate: it checks
+  the bearer token, forwards the raw request body to JS over the same
+  device-event bridge as the memory-pressure signal, and blocks on a
+  `CompletableFuture` until the TypeScript MCP engine responds. Binds `0.0.0.0`
+  and the Settings screen shows the LAN URL. Single-client by design.
+
 ## [0.2.0] — 2026-07-07
 
 Fase 5 — Reliability & Release, plus the on-device performance work from Fase 4.
