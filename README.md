@@ -19,7 +19,7 @@
   <a href="#"><img src="https://img.shields.io/badge/language-TypeScript-3178C6.svg" alt="TypeScript" /></a>
   <a href="#"><img src="https://img.shields.io/badge/offline-first-C07A56.svg" alt="Offline First" /></a>
   <a href="#"><img src="https://img.shields.io/badge/LLM-on--device-8B5CF6.svg" alt="On-device LLM" /></a>
-  <a href="#status"><img src="https://img.shields.io/badge/status-early%20(pre--0.2)-orange.svg" alt="Early / pre-0.2" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-v0.2.0%20%2B%20MCP-C07A56.svg" alt="v0.2.0 + MCP" /></a>
 </p>
 
 ---
@@ -69,12 +69,13 @@ Named after the Roman goddess of the hearth, Vesta is the sacred fire that never
 | 🕘 **Conversation history** | Full persistence with SQLite — browse, switch, and delete past chats. |
 | 📱 **Home-screen widget** | A 2×2 widget with a quick-chat bar and voice entry — one tap to talk to Vesta. |
 | 🔁 **Query loop** | Read tools (calendar, contacts) run inline, so questions like "che appuntamenti ho domani?" get answered in natural language from your real on-device data. |
+| 🔌 **Local MCP server** | Expose Vesta's read tools to an agent on your laptop (Claude Code / Desktop) over Wi-Fi. It gets your calendar, contacts, and documents as **structured data** — nothing leaves the phone. Per-client bearer tokens, revocable, off by default. |
 
 ---
 
 ## Status
 
-Vesta is **early and under active development** (Fase 4 — On-device Performance complete; next up: Reliability & Release). All 10 core tools, multi-turn memory, conversation history, document RAG, and an in-app model manager are in place and verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, contact search, and PDF question-answering run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Fase 4 made it fast: a KV-cache-friendly prompt architecture turns warm turns into pure appends (flat ~6s instead of ~67s full re-prefills) and a persistent prefix cache cuts the first message after a cold start from 37.3s to 2.8s (13.4x) — all measured on device. Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
+Vesta is **under active development**. The first signed release, **v0.2.0**, shipped after Fase 5 (Reliability & Release); Fase 6 slice 1 — a **local MCP server** — has since landed on `main`. All 10 core tools, multi-turn memory, conversation history, document RAG, and an in-app model manager are in place and verified on real hardware (a Pixel 10 Pro): chat, alarms, timers, calendar read, contact search, and PDF question-answering run fully offline against real on-device data, with destructive actions (calls, SMS) gated behind an explicit confirmation step, and malformed tool-call JSON auto-corrected with a single retry. Fase 4 made it fast: a KV-cache-friendly prompt architecture turns warm turns into pure appends (flat ~6s instead of ~67s full re-prefills) and a persistent prefix cache cuts the first message after a cold start from 37.3s to 2.8s (13.4x) — all measured on device. Fase 5 made it trustworthy: silent persistence failures now surface as a dismissible notice, Android low-memory pressure is handled natively, long conversations stay fast (anchored history window), and an on-device diagnostics screen stands in for telemetry — all offline. Fase 6 slice 1 makes Vesta local agent infrastructure: a laptop agent (Claude Code / Desktop) can call its read tools over Wi-Fi and receive structured data, with nothing leaving the phone (verified on a Pixel 10 Pro). Expect rough edges, breaking changes, and an evolving feature set. Issues and PRs are very welcome — see [Contributing](#contributing).
 
 ---
 
@@ -174,12 +175,13 @@ React Native App (TypeScript)
 Native Bridge (Kotlin)
   ├─ llama.rn — on-device inference (llama.cpp / GGUF)
   ├─ SystemActionsModule — Android Intents (alarm, calendar)
+  ├─ McpServerModule — local MCP server (NanoHTTPD) for LAN agents
   ├─ VestaService — foreground service keeps the model in RAM
   └─ Widget + Voice activities
           │
           ▼
 Local Storage
-  ├─ SQLite (messages, conversations, memories, config)
+  ├─ SQLite (messages, conversations, memories, config, documents, mcp_clients)
   └─ .gguf model files
 ```
 
@@ -212,8 +214,8 @@ Results are specific to our dataset and system prompt — your mileage may vary,
 | **Fase 2** — Core Polish | ✅ Done | All 10 tools (calls, SMS, contacts, calendar read), query loop, multi-turn context, memory, settings, malformed-JSON retry — verified on a Pixel 10 Pro, fully offline |
 | **Fase 3** — Document Intelligence | ✅ Done | Import PDF / Word / text / Markdown, on-device embeddings (Nomic) + brute-force cosine retrieval, `query_document` — grounded offline answers, verified on a Pixel 10 Pro |
 | **Fase 4** — On-device Performance | ✅ Done | KV-cache prompt layout (static system prompt + per-turn date context): warm turns are pure appends; cold-start prefix cache (first message 13.4x faster); tunable threads / KV-quant / mlock — all measured on a Pixel 10 Pro |
-| **Fase 5** — Reliability & Release | 🔜 Next | v0.2.0 signed release, failure-path hardening, low-memory handling, regression tests for every on-device bug class, on-device diagnostics |
-| **Fase 6** — MCP + Advanced | 📋 Future | Expose tools as a local MCP server for other agents, accessibility |
+| **Fase 5** — Reliability & Release | ✅ Done | Signed **v0.2.0** release, failure-path hardening (loud persistence notices), native low-memory handling, anchored history window, regression tests for every on-device bug class, on-device diagnostics |
+| **Fase 6** — MCP + Advanced | 🚧 Active | **Slice 1 shipped:** a local MCP server exposing Vesta's read tools to LAN agents (read-only, per-client bearer tokens, data-not-answers) — verified on a Pixel 10 Pro. Next: write tools + remote-confirm, mDNS, TLS |
 | _Parked_ — Mac Hub & iOS | ⏸️ Parked | Android-first focus; LAN 70B hub and MLX-Swift iOS port deferred |
 
 Full plan with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
@@ -239,16 +241,17 @@ Full plan with exit gates: [docs/GAMEPLAN.md](docs/GAMEPLAN.md).
 ```
 vesta/
 ├── apps/mobile/               # React Native + Expo app
-│   ├── app/                   # Screens (Expo Router): chat, history, models, settings
+│   ├── app/                   # Screens (Expo Router): chat, history, models, settings, mcp
 │   ├── components/            # Chat UI components
 │   ├── lib/
 │   │   ├── orchestrator/      # Router, prompt builder, tools, memory, knowledge
+│   │   ├── mcp/               # Local MCP server: JSON-RPC engine, pairing store, lifecycle
 │   │   ├── llm/               # llama.rn engine wrapper
 │   │   ├── models/            # Curated catalog + download manager + registry
 │   │   ├── native/            # TS bridges to the Kotlin modules
 │   │   ├── storage/           # SQLite layer
 │   │   └── store/             # Zustand state
-│   ├── native/android/        # Kotlin: system actions, foreground service, widget, voice
+│   ├── native/android/        # Kotlin: system actions, MCP server, foreground service, widget, voice
 │   └── plugins/               # Expo config plugins (copy + register native code)
 ├── scripts/benchmark/         # Fase 0 model validation harness
 └── docs/                      # Architecture, spec, PRD, gameplan, benchmark results

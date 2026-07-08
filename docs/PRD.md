@@ -127,6 +127,17 @@ Implementation: Qwen3 4B already supports 100+ languages natively. No model chan
 | US-41 | "Analizza questo documento complesso" (delegato al Mac) | Il telefono invia al Mac, il Mac risponde con modello 70B, la risposta appare nell'app. |
 | US-42 | Tutto funziona anche senza il Mac | Nessun task fallisce se il Mac non è raggiungibile. Qualità inferiore ma funzionale. |
 
+### 5.6 MCP Server (Priority: P1) — ✅ SLICE 1
+
+> **Slice 1 shippata (2026-07-08):** server MCP locale, solo tool di lettura, esposto via LAN. Scrittura, mDNS e TLS sono slice future — vedi §10.
+
+| ID | User Story | Criterio di Accettazione |
+|---|---|---|
+| US-50 | Un agente sul laptop dell'utente (Claude Code / Claude Desktop) si collega a Vesta via MCP sulla LAN e chiede "che impegni ho oggi?" o "cerca il contatto Marco" | Il tool di lettura (`get_calendar_events`, `search_contacts` o `query_document`, tutti `returnsData`) risponde con dati strutturati, mai con una risposta generata dal modello locale; è l'agente remoto a ragionarci sopra. Nulla lascia il telefono se non i dati richiesti, verso il client autorizzato. |
+| US-51 | L'utente vuole autorizzare un nuovo client a interrogare Vesta | Da Settings → MCP viene emesso un token bearer per-client; il consenso è solo di emissione — nessun tool viene eseguito senza che l'utente lo veda approvare esplicitamente. |
+| US-52 | L'utente vuole revocare l'accesso a un client | Il token viene invalidato istantaneamente dalla stessa schermata; le richieste successive con quel token vengono rifiutate. |
+| US-53 | L'utente non ha mai attivato MCP | Il server è OFF di default (nessuna porta in ascolto); in questa slice, anche da attivo, espone solo tool read-only — nessuna azione di sistema è raggiungibile via MCP. |
+
 ---
 
 ## 6. Requisiti Non-Funzionali
@@ -249,7 +260,7 @@ FASE 4  [Done 2026-07-06]   On-device Performance
                 flat ~6s appends; cold start 37.3s → 2.8s (13.4x);
                 Fase 0 benchmark holds (98.9% tool / 100% JSON).
 
-FASE 5  [Next]          Reliability & Release
+FASE 5  [Done 2026-07-07]   Reliability & Release
   ├─ v0.2.0: signed APK via GitHub Releases (everything since v0.1.0 ships)
   ├─ Silent-failure elimination (persistence errors surfaced to UI)
   ├─ Low-memory story for the resident model (onTrimMemory handling)
@@ -259,8 +270,14 @@ FASE 5  [Next]          Reliability & Release
   └─ EXIT GATE: signed v0.2.0 installable from GitHub Releases; zero known
                 silent-failure paths; on-device bug classes test-covered.
 
-FASE 6  [Future]        MCP + Advanced
-  ├─ MCP Server: expose Vesta tools as MCP endpoints (local agent infra)
+FASE 6  [In corso]      MCP + Advanced
+  ├─ Slice 1 [Done 2026-07-08]: MCP Server locale, read-only —
+  │  espone get_calendar_events, search_contacts, query_document
+  │  (tool returnsData: dati strutturati, mai risposte generate);
+  │  token per-client revocabili, server OFF di default; verificato
+  │  su device (Pixel 10 Pro) da laptop via LAN
+  ├─ Prossime slice: tool di scrittura + remote-confirm, mDNS
+  │  discovery, TLS
   ├─ Study plans + interactive tutor
   ├─ Multi-agent swarm
   ├─ Accessibility Service (Android, opt-in, sideload only)

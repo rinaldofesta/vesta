@@ -242,6 +242,15 @@ File `.gguf` nello storage locale dell'app, scaricati dall'utente via catalogo i
 
 Accanto ai modelli vive la **prefix session cache** (`session-cache/`): lo stato KV del prefisso stabile del prompt, salvato con `saveSession` dopo il primo turno pulito e ripristinato con `loadSession` subito dopo il load del modello. Un solo file, chiave = hash(model path + kv-cache type + testo del prefisso); qualunque cambiamento (modello, memorie, knowledge, lingua, perf settings) la invalida. Attenzione al costo: llama.cpp serializza lo stato KV COMPLETO (~215 MB per Qwen3 4B f16 a ~1450 token), quindi i salvataggi sono debounced (120s) e saltati finché l'hash su disco è valido. Misurato: primo messaggio da 37.3s → 2.8s (13.4x).
 
+### 3.5 MCP Server (LAN, read-only)
+
+Da Fase 6 slice 1, Vesta espone un server MCP (Model Context Protocol) sulla LAN: un host agent esterno (es. Claude) può leggere dati Vesta — calendario, contatti, documenti — da un altro device sulla stessa Wi-Fi, senza mai eseguire azioni sul telefono.
+
+Vale lo stesso principio del resto del layer nativo (§3.3): il Kotlin è STUPIDO, fa solo trasporto e gate di autenticazione; l'intelligenza resta in TypeScript.
+
+- **Nativo** (`McpHttpServer.kt`, NanoHTTPD, registrato in `SystemActionsPackage`): bind `0.0.0.0:8420`, unico endpoint `POST /mcp` (tutto il resto 404), JSON-RPC 2.0 senza SSE. Controlla `Authorization: Bearer <token>` contro un set di token attivi tenuto in-memory — assente o sconosciuto, 401 immediato, prima di toccare qualunque altra cosa. Il body grezzo passa a JS via `emitDeviceEvent("mcpRequest", ...)` (stesso bridge pattern di `memoryWarning`, ADR-016); la richiesta resta bloccata su un `CompletableFuture` (timeout 30s) finché JS non risponde con `respondMcp`. Il nativo non apre mai il DB.
+- **TypeScript** (`lib/mcp/`): `mcp-server.ts` è il motore JSON-RPC (`initialize` / `tools/list` / `tools/call`); `mcp-tools.ts` espone solo i tool `returnsData` del registry esistente (`get_calendar_events`, `search_contacts`, `query_document`), instradati al percorso dati del dispatcher — mai al query loop generativo, quindi dato, non risposta generata. `pairing-store.ts` gestisce i token per-client; `mcp-lifecycle.ts` accende/spegne il server (`mcp_enabled`, OFF di default).
+
 ---
 
 ## 4. Flusso Dati: Casi d'Uso Completi
@@ -490,6 +499,14 @@ Hub connesso → delega dei task pesanti al modello 70B; Hub assente → tutto l
 
 **Motivazione**: l'embedding è l'unica risorsa davvero cheap-to-rebuild. Il modello chat vale il costo di tenerlo; se la pressione è tale che l'OS ci uccide comunque, il Foreground Service è START_STICKY e la prefix session cache (ADR-012) rende la ripartenza ~3s. La session cache su disco NON va toccata sotto pressione: non ha lavoro pendente cancellabile (il debounce è un gate su `Date.now()`, non un timer) e cancellarla eliminerebbe proprio ciò che rende economico il restart.
 
+### ADR-017: MCP Server — bind LAN, tool read-only, token di proprietà TypeScript
+
+**Contesto**: serve un modo per un host agent esterno (es. Claude) di leggere dati Vesta — calendario, contatti, documenti — da un altro device, senza aprire l'app a comandi arbitrari.
+
+**Decisione (Fase 6 slice 1, PR #33)**: il server MCP fa bind su `0.0.0.0:8420`, raggiungibile da tutta la LAN e non solo da `localhost` — la topologia loopback-only avrebbe richiesto un tunnel/proxy per lo use case reale (laptop + telefono sulla stessa Wi-Fi). Il set di tool esposti è ESATTAMENTE quelli già marcati `returnsData: true` nel registry esistente (`get_calendar_events`, `search_contacts`, `query_document`): nessun flag MCP-specifico nuovo, nessun tool d'azione raggiungibile. Ogni chiamata risponde con il dato strutturato del tool (`ToolCallResult.data`), mai con una risposta generata dal modello — data, non risposte. I token di pairing sono di proprietà del TypeScript (tabella `mcp_clients`) e vengono spinti al nativo solo come set in-memory (`setActiveTokens`); il nativo non li persiste mai. Il trasporto è un sottoinsieme minimale di Streamable HTTP: un solo endpoint `POST /mcp`, JSON-RPC 2.0, niente SSE.
+
+**Motivazione**: il bind LAN massimizza l'utilità reale, col rischio contenuto dal resto della decisione (read-only, bearer token, OFF di default — §8). Riusare il registry tool esistente invece di un set parallelo elimina drift tra i due path di dispatch. TS-owns-tokens mantiene la revoca istantanea (elimina riga + ri-push → 401) senza stato persistente da proteggere nel nativo. Il transport minimale evita la complessità di un client SSE completo, che questa slice non richiede.
+
 ---
 
 ## 8. Sicurezza
@@ -500,6 +517,7 @@ Hub connesso → delega dei task pesanti al modello 70B; Hub assente → tutto l
 - **Accesso fisico al device**: conversazioni e documenti sono sul device, nel sandbox dell'app. Encryption at rest del database: **non implementata** (il DB vive nella private app dir; FDE/FBE di Android è la mitigazione corrente). Candidata per una fase futura.
 - **Prompt injection via documenti**: un PDF malizioso potrebbe contenere testo che manipola il modello. Mitigazione: i chunk sono iniettati come tool result con istruzione di rispondere SOLO sugli estratti; le azioni di sistema restano dietro il confirm gate.
 - **Azioni non autorizzate**: il modello potrebbe hallucinate un'azione non richiesta. Mitigazione: step di conferma esplicito nella UI prima di ogni azione; `make_call`/`send_sms` sono sempre confermati e comunque non partono da soli (ACTION_DIAL/ACTION_SENDTO aprono l'app di sistema — l'utente preme l'ultimo bottone).
+- **Superficie LAN (MCP server, opzionale)**: esporre un server sulla stessa rete (§3.5, ADR-017) introduce una superficie d'attacco nuova rispetto al resto dell'app. Mitigazioni: raggiungibile solo da chi è sulla stessa Wi-Fi; bearer token per-client verificato prima di qualunque lavoro (401 altrimenti); set di tool read-only, nessun tool d'azione esposto; server spento di default, attivabile solo dall'utente; revoca di un token istantanea. Limiti onesti, accettati per questa slice: niente TLS (traffico in chiaro sulla LAN, si assume una rete Wi-Fi fidata); niente throttling del thread JS in background (si assume Vesta in foreground durante l'uso MCP).
 
 ### 8.2 Permessi Android
 
