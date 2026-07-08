@@ -364,6 +364,22 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* MCP Server section */}
+      <Text style={styles.sectionTitle}>MCP Server</Text>
+      <View style={styles.card}>
+        <Text style={styles.knowledgeDesc}>
+          Let a laptop agent (Claude Code / Desktop) call Vesta&apos;s read tools
+          over your Wi-Fi. Your data stays on the phone.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPrimary, styles.knowledgeAddBtn]}
+          onPress={() => router.push("/mcp")}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.btnPrimaryText}>Configure MCP</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* About section */}
       <Text style={styles.sectionTitle}>About</Text>
       <View style={styles.card}>
