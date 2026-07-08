@@ -214,6 +214,22 @@ La "query semantica" è codice TS, non SQL: si caricano gli embedding dei chunk,
 si calcola il dot product con l'embedding della query (entrambi L2-normalized →
 cosine), si tengono i top-K sopra la soglia di rilevanza 0.28.
 
+### 2.3 Client MCP (Fase 6)
+
+```sql
+CREATE TABLE IF NOT EXISTS mcp_clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,   -- 24 byte casuali hex (~192 bit)
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER
+);
+```
+
+Questa è la **migrazione v3** (`lib/storage/database.ts`). I token sono di
+proprietà del layer TypeScript — il nativo (`McpServerModule`, §5.4) ne vede solo
+una copia in memoria (`setActiveTokens`), non apre mai il DB.
+
 ---
 
 ## 3. Tool System
@@ -440,6 +456,11 @@ export const TOOLS_V1: ToolDefinition[] = [
   }
 ];
 ```
+
+I 3 tool con `returnsData: true` (`get_calendar_events`, `search_contacts`,
+`query_document`) sono anche esposti via il server MCP locale (Fase 6, §5.4),
+che ne restituisce il `data` strutturato — data-not-answers — senza girare il
+query loop generativo dell'orchestrator.
 
 ### 3.3 System Prompt Template
 
@@ -676,6 +697,54 @@ class VestaService : Service() {
   }
 }
 ```
+
+### 5.4 McpServerModule (Kotlin) — Fase 6
+
+> Trasporto **stupido**: il modulo termina solo l'HTTP e l'auth gate, inoltra il
+> body grezzo a JS e blocca il thread della richiesta su una `CompletableFuture`
+> finché JS non richiama `respondMcp`. Il vero motore JSON-RPC (`initialize`,
+> `tools/list`, `tools/call`) vive in TypeScript (`lib/mcp/`).
+
+```kotlin
+// native/android/McpServerModule.kt
+
+class McpServerModule(reactContext: ReactApplicationContext) :
+    ReactContextBaseJavaModule(reactContext) {
+
+  @Volatile private var activeTokens: Set<String> = emptySet()
+
+  @ReactMethod
+  fun startServer(port: Int, promise: Promise)
+  // Risolve l'IP LAN IPv4 e fa il bind di NanoHTTPD su quella porta.
+  // Idempotente: se il server è già attivo, ri-risolve l'IP senza ri-bindare.
+
+  @ReactMethod
+  fun stopServer(promise: Promise)
+
+  @ReactMethod
+  fun setActiveTokens(tokens: ReadableArray)
+  // Aggiorna il set @Volatile (in-memory) dei token validi, pushato da TS —
+  // il nativo non apre mai `mcp_clients` (§2.3).
+
+  @ReactMethod
+  fun respondMcp(id: String, status: Int, body: String)
+  // Completa la CompletableFuture della richiesta bloccata su quell'id.
+
+  // NativeEventEmitter contract — no-op, richiesti dal protocollo RN.
+  @ReactMethod fun addListener(eventName: String) {}
+  @ReactMethod fun removeListeners(count: Int) {}
+
+  // Emette "mcpRequest" { id, token, body } verso JS, guardato da
+  // hasActiveReactInstance() (nessun evento se il bridge non è vivo).
+}
+```
+
+Il trasporto HTTP è **NanoHTTPD** (`org.nanohttpd:nanohttpd:2.3.1`, dipendenza
+aggiunta al build Gradle dal config plugin `plugins/with-system-actions.js`):
+bind su `0.0.0.0:8420`, serve solo `POST /mcp` (altrimenti 404), auth gate
+`Authorization: Bearer <token>` verificato contro `activeTokens` (altrimenti
+401), poi inoltra il body a JS e blocca il thread su una `CompletableFuture`
+(timeout 30s) fino alla risposta.
 
 ---
 
