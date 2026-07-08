@@ -18,7 +18,21 @@ export default function McpScreen() {
   const [newName, setNewName] = useState("");
 
   const refresh = useCallback(() => {
-    isMcpEnabled().then(setEnabled).catch(() => {});
+    (async () => {
+      try {
+        const on = await isMcpEnabled();
+        setEnabled(on);
+        if (on) {
+          // Enabled in a previous session/visit: ensure the server is running
+          // this session (enableMcpServer is idempotent) and capture the LAN IP
+          // so the pairing command shows a real address, not the placeholder.
+          const res = await enableMcpServer();
+          setIp(res.ip);
+        }
+      } catch {
+        // Leave the toggle in its last-known state; toggle() surfaces errors.
+      }
+    })();
     listClients().then(setClients).catch(() => setClients([]));
   }, []);
   useEffect(refresh, [refresh]);
@@ -44,20 +58,35 @@ export default function McpScreen() {
   const addClient = async () => {
     const name = newName.trim();
     if (!name) return;
-    const c = await createClient(name);
-    setNewName("");
-    setClients(await listClients());
-    const url = ip ? `http://${ip}:${MCP_PORT}/mcp` : `http://<phone-ip>:${MCP_PORT}/mcp`;
-    Alert.alert(
-      c.name,
-      `Add to your MCP client:\n\nclaude mcp add --transport http vesta ${url} --header "Authorization: Bearer ${c.token}"`,
-    );
+    try {
+      const c = await createClient(name);
+      setNewName("");
+      setClients(await listClients());
+      const url = ip ? `http://${ip}:${MCP_PORT}/mcp` : `http://<phone-ip>:${MCP_PORT}/mcp`;
+      Alert.alert(
+        c.name,
+        `Add to your MCP client:\n\nclaude mcp add --transport http vesta ${url} --header "Authorization: Bearer ${c.token}"`,
+      );
+    } catch (e) {
+      Alert.alert("MCP", e instanceof Error ? e.message : String(e));
+    }
   };
 
   const revoke = (c: McpClient) =>
     Alert.alert("Revoke", `Revoke "${c.name}"? Its token stops working immediately.`, [
       { text: "Cancel", style: "cancel" },
-      { text: "Revoke", style: "destructive", onPress: async () => { await revokeClient(c.id); setClients(await listClients()); } },
+      {
+        text: "Revoke",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await revokeClient(c.id);
+            setClients(await listClients());
+          } catch (e) {
+            Alert.alert("MCP", e instanceof Error ? e.message : String(e));
+          }
+        },
+      },
     ]);
 
   return (
