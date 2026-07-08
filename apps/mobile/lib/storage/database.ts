@@ -112,6 +112,20 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
     `,
   },
+  {
+    // Fase 6 (MCP): per-client bearer tokens for the local MCP server. Owned
+    // here in TS; the native HTTP server only ever sees an in-memory copy.
+    version: 3,
+    sql: `
+      CREATE TABLE IF NOT EXISTS mcp_clients (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        last_seen INTEGER
+      );
+    `,
+  },
 ];
 
 // Exported for testing. Applies every migration whose version exceeds the DB's
@@ -725,4 +739,39 @@ export async function getAllChunks(): Promise<StoredChunk[]> {
     });
   }
   return out;
+}
+
+// --- MCP clients (Fase 6) ---
+
+export interface McpClientRow {
+  id: string;
+  name: string;
+  token: string;
+  created_at: number;
+  last_seen: number | null;
+}
+
+export async function insertMcpClient(row: McpClientRow): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "INSERT INTO mcp_clients (id, name, token, created_at, last_seen) VALUES (?, ?, ?, ?, ?)",
+    [row.id, row.name, row.token, row.created_at, row.last_seen],
+  );
+}
+
+export async function selectMcpClients(): Promise<McpClientRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<McpClientRow>(
+    "SELECT id, name, token, created_at, last_seen FROM mcp_clients ORDER BY created_at DESC",
+  );
+}
+
+export async function deleteMcpClient(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM mcp_clients WHERE id = ?", [id]);
+}
+
+export async function touchMcpClient(token: string, at: number): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("UPDATE mcp_clients SET last_seen = ? WHERE token = ?", [at, token]);
 }

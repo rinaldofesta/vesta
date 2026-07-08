@@ -206,6 +206,27 @@ This is a massive positioning upgrade: from "offline assistant" to "the local ag
 - Authentication: user approves which external agents can use Vesta (consent-based)
 - Use case: Claude Code asks Vesta to "check my calendar for tomorrow" → Vesta reads local calendar → returns data → Claude Code uses it in its workflow. All without the calendar data ever leaving the device.
 
+**Slice 1 — Local MCP server: SHIPPED (verified on a Pixel 10 Pro, 2026-07-08).**
+Read-only MCP server over the LAN: a native NanoHTTPD transport + auth gate in the
+Android layer (`POST /mcp`, JSON-RPC 2.0, no SSE, binds `0.0.0.0`) forwards raw
+requests to a TypeScript MCP engine that reuses the tool registry and dispatcher.
+Exposes exactly the three `returnsData` read tools (`get_calendar_events`,
+`search_contacts`, `query_document`) and returns their **structured data, not a
+generated answer** — over MCP the host agent reasons, so Vesta skips the
+orchestrator's generation loop. Per-client bearer tokens are minted/revoked in a
+new Settings → MCP screen, owned in SQLite by TS (migration v3) and pushed into the
+native in-memory set; the native layer never opens the DB. Off by default.
+
+Exit gate met on hardware from a laptop on the same Wi-Fi: `initialize` + `tools/list`
+returned the three tools; `tools/call` returned real on-device data (calendar events,
+contacts, and a retrieved PDF passage for `query_document` — retrieval ran, generation
+skipped); a non-read tool (`make_call`) was refused (`isError`, never dispatched); an
+absent/wrong/revoked token → 401 (`{"error":"unauthorized"}`), a non-`/mcp` path → 404;
+revoking a client in-app made its token fail instantly. Slice 1 assumes Vesta is
+foregrounded during MCP use. Deferred to later slices: action (write) tools with a
+remote-confirm UX, mDNS discovery, TLS, boot-time auto-restore, and a
+`ConnectivityManager.NetworkCallback` rebind on network change.
+
 **Other Fase 6 candidates:**
 - Interactive tutor (study plans, quizzes, Socratic mode)
 - Multi-agent swarm (specialized agents collaborating)
@@ -237,6 +258,7 @@ Track key decisions here as you make them during development.
 | 2026-07-07 | Fase 5 = Reliability & Release; MCP moves to Fase 6 | Everything since v0.1.0 (Fase 2–4) is unreleased on main; a docs/code audit found silent persistence failures, no memory-pressure handling, and no release pipeline. Ship trust before features: signed v0.2.0, loud failures, regression tests for every on-device bug class. MCP keeps its scope, one slot later. Same audit realigned ARCHITECTURE/SPEC to the implemented reality (10 new ADRs: llama.rn, no cascade, no sqlite-vec, V4 prompt, session cache, perf defaults, no auto-unload). |
 | 2026-07-07 | Known-limitations triage | (a) 20-message window slide — FIXED: `slice(-20)` re-sliced every turn, so a conversation past 20 messages re-prefilled the whole window each turn (worse than the "once per slide" the docs implied). Now `historyWindowStart` anchors the window start to an 8-message stride: byte-identical head between jumps (pure append), one re-prefill per stride instead of per turn — ~4x fewer, window bounded to ≤27 messages. (b) timezone-change re-render and (c) `[Tool:]` suffix re-prefill — ACCEPTED: both rare and bounded; (c)'s suffix is required for the model to see the tool outcome. |
 | 2026-07-07 | Fase 5 complete except the release | Items 2–6 shipped and merged (#25 silent-failure notices, #26 low-memory onTrimMemory, #27 regression tests, #28 window-slide fix + triage, #29 diagnostics), test suite 180. #26 and #29 device-verified on a Pixel 10 Pro (native trim logs; live diagnostics values). Item 1 (signed v0.2.0) is DRAFTED (#30: `release.yml` + guarded `with-android-signing` plugin + `docs/RELEASING.md`, app.json→0.2.0) but the actual release is user-blocked on the owner generating a keystore + setting 4 secrets. |
+| 2026-07-08 | Fase 6 slice 1 complete (verified on device) | Local MCP server: read-only tools over the LAN (native NanoHTTPD transport + auth gate, TS JSON-RPC engine reusing the registry/dispatcher, per-client bearer tokens in SQLite pushed to native memory, Settings → MCP screen). Built via subagent-driven TDD (12 commits, 8 tasks, per-task + whole-branch review); the review loop caught 4 real bugs the plan's own code had (never-throws on `"null"` bodies, a Kotlin `serve()` pending-leak + mis-mapped 202, a stale-IP/swallowed-error pair in the UI). Full jest suite 206/206, typecheck clean, `assembleDebug` green. Exit gate met on a Pixel 10 Pro from a laptop over Wi-Fi: `tools/list`+`tools/call` return real calendar/contacts/RAG data-not-answers, non-read tools refused, absent/revoked token → 401, revoke propagates instantly. Deferred: write tools + remote-confirm, mDNS, TLS, boot-restore, NetworkCallback rebind. |
 
 ---
 

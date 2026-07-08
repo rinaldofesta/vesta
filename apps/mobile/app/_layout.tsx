@@ -97,6 +97,7 @@ export default function RootLayout() {
           name="diagnostics"
           options={{ title: "Diagnostics" }}
         />
+        <Stack.Screen name="mcp" options={{ title: "MCP Server" }} />
       </Stack>
     </SafeAreaProvider>
   );

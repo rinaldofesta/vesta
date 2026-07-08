@@ -2,9 +2,30 @@
 // After `npx expo prebuild`, this plugin copies Kotlin files and Android resources
 // into the android/ dir, registers packages, and adds the widget receiver to the manifest.
 
-const { withMainApplication, withDangerousMod, withAndroidManifest } = require("expo/config-plugins");
+const {
+  withMainApplication,
+  withDangerousMod,
+  withAndroidManifest,
+  withAppBuildGradle,
+} = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
+
+// Fase 6 (MCP): the native McpHttpServer uses NanoHTTPD as its HTTP transport.
+// Add the dependency to the app module's build.gradle (idempotent — skipped if
+// already present).
+function withNanoHttpd(config) {
+  return withAppBuildGradle(config, (cfg) => {
+    const dep = `    implementation("org.nanohttpd:nanohttpd:2.3.1")`;
+    if (!cfg.modResults.contents.includes("org.nanohttpd:nanohttpd")) {
+      cfg.modResults.contents = cfg.modResults.contents.replace(
+        /dependencies\s*\{/,
+        (m) => `${m}\n${dep}`,
+      );
+    }
+    return cfg;
+  });
+}
 
 function withSystemActions(config) {
   // Copy Kotlin source files into the generated android project
@@ -241,6 +262,8 @@ function withSystemActions(config) {
 
     return config;
   });
+
+  config = withNanoHttpd(config);
 
   return config;
 }
