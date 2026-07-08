@@ -38,14 +38,19 @@ class McpHttpServer(
         val body = readBody(session)
         val id = synchronized(this) { "req-${counter++}" }
         val future = CompletableFuture<Pair<Int, String>>()
-        pending[id] = future
-        onRequest(id, token, body)
 
         return try {
+            // Register the future BEFORE emitting so a synchronous JS reply can't
+            // race a missing entry; keep onRequest inside the try so a synchronous
+            // throw still cleans up `pending` and returns a 500 instead of leaking.
+            pending[id] = future
+            onRequest(id, token, body)
             val (status, respBody) = future.get(30, TimeUnit.SECONDS)
             val nanoStatus = if (status == 200) Response.Status.OK else Response.Status.INTERNAL_ERROR
-            // MCP notifications return an empty body → 202 Accepted, no content.
-            if (respBody.isEmpty()) {
+            // A 200 with an empty body is an MCP notification → 202 Accepted, no
+            // content. An empty body with a non-200 status is a real failure and
+            // must surface as INTERNAL_ERROR, never 202.
+            if (status == 200 && respBody.isEmpty()) {
                 newFixedLengthResponse(Response.Status.ACCEPTED, "application/json", "")
             } else {
                 newFixedLengthResponse(nanoStatus, "application/json", respBody)
