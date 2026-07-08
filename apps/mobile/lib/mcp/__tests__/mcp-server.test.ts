@@ -17,6 +17,7 @@ it("initialize returns protocol + server info", async () => {
   expect(res.id).toBe(1);
   expect(res.result.serverInfo.name).toBe("vesta");
   expect(res.result.capabilities).toHaveProperty("tools");
+  expect(res.result.protocolVersion).toBe("2025-06-18");
 });
 
 it("tools/list returns the exposed tools", async () => {
@@ -56,4 +57,15 @@ it("malformed JSON → parse error -32700 with null id", async () => {
 it("notification (no id) produces an empty response body", async () => {
   const body = await handleJsonRpc(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }), "t1");
   expect(body).toBe("");
+});
+
+it("a null JSON body is an Invalid Request, not a throw", async () => {
+  const res = JSON.parse(await handleJsonRpc("null", "t1"));
+  expect(res.error.code).toBe(-32600);
+  expect(res.id).toBeNull();
+});
+
+it("a top-level primitive body is an Invalid Request", async () => {
+  const res = JSON.parse(await handleJsonRpc("42", "t1"));
+  expect(res.error.code).toBe(-32600);
 });

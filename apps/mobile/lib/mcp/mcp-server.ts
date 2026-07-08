@@ -29,6 +29,13 @@ export async function handleJsonRpc(bodyText: string, token: string): Promise<st
     return JSON.stringify(err(null, -32700, "Parse error"));
   }
 
+  // A valid-JSON body that isn't an object (null, a number, a string, an array)
+  // parses fine but is not a JSON-RPC request. Reject it before touching req.id
+  // so handleJsonRpc keeps its never-throws contract.
+  if (req === null || typeof req !== "object" || Array.isArray(req)) {
+    return JSON.stringify(err(null, -32600, "Invalid Request"));
+  }
+
   // Notifications (no id) get no response body.
   const isNotification = req.id === undefined;
 
